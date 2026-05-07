@@ -71,8 +71,12 @@ export class InMemoryRepository implements StudioRepository {
     if (!session) {
       throw new Error(`Session not found: ${input.sessionId}`);
     }
-    if (!this.sentences.some((sentence) => sentence.id === input.sentenceId)) {
+    const sentence = this.sentences.find((item) => item.id === input.sentenceId);
+    if (!sentence) {
       throw new Error(`Sentence not found: ${input.sentenceId}`);
+    }
+    if (sentence.textId !== session.textId) {
+      throw new Error("Sentence does not belong to session text");
     }
 
     const attempt: Attempt = {

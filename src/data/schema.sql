@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   ended_at TEXT
 );
 
+-- SQLite repository implementations must pre-validate that session.text_id
+-- matches sentence.text_id before inserting an attempt.
 CREATE TABLE IF NOT EXISTS attempts (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,

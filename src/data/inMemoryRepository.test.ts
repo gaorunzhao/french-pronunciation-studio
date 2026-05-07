@@ -233,4 +233,33 @@ describe("InMemoryRepository", () => {
       })
     ).rejects.toThrow("Sentence not found: missing");
   });
+
+  it("rejects adding an attempt when session and sentence belong to different texts", async () => {
+    const repository = new InMemoryRepository();
+    const firstText = await repository.createText({
+      title: "Cafe dialogue",
+      body: "Bonjour."
+    });
+    const secondText = await repository.createText({
+      title: "Market dialogue",
+      body: "Merci."
+    });
+    const session = await repository.createSession(firstText.text.id);
+
+    await expect(
+      repository.addAttempt({
+        sessionId: session.id,
+        sentenceId: secondText.sentences[0].id,
+        recordingPath: "mock://recording.wav",
+        durationMs: 900,
+        recognizedText: "Merci",
+        analysis: {
+          words: [{ expected: "Merci", recognized: "Merci", status: "match" }],
+          mismatchCount: 0,
+          timingStatus: "similar",
+          needsRepeat: false
+        }
+      })
+    ).rejects.toThrow("Sentence does not belong to session text");
+  });
 });
