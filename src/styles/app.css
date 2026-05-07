@@ -161,6 +161,13 @@ button {
   gap: 8px;
 }
 
+.mode-indicator {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .sentence-list {
   display: grid;
   gap: 10px;

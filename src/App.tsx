@@ -93,6 +93,22 @@ export default function App({ repository: providedRepository }: AppProps) {
     setAnalysis(result);
   }
 
+  function clearSentenceLabState() {
+    setHasReference(false);
+    setHasRecording(false);
+    setReferenceDurationMs(0);
+    setRecordingDurationMs(0);
+    setAnalysis(undefined);
+    setIsLooping(false);
+  }
+
+  function selectSentence(sentenceId: string) {
+    if (sentenceId === selectedSentenceId) return;
+
+    setSelectedSentenceId(sentenceId);
+    clearSentenceLabState();
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar" aria-label="App sidebar">
@@ -116,13 +132,8 @@ export default function App({ repository: providedRepository }: AppProps) {
             setSentences(created.sentences);
             setSelectedTextId(created.text.id);
             setSelectedSentenceId(created.sentences[0]?.id);
-            setHasReference(false);
-            setHasRecording(false);
-            setReferenceDurationMs(0);
-            setRecordingDurationMs(0);
-            setAnalysis(undefined);
+            clearSentenceLabState();
             setSpeed(0.9);
-            setIsLooping(false);
           }}
         />
       </aside>
@@ -136,7 +147,7 @@ export default function App({ repository: providedRepository }: AppProps) {
           speed={speed}
           isLooping={isLooping}
           onSpeedChange={setSpeed}
-          onSelectSentence={setSelectedSentenceId}
+          onSelectSentence={selectSentence}
           onPlayReference={playReference}
           onRecord={record}
           onCompare={compare}

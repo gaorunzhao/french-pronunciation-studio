@@ -49,14 +49,7 @@ export function PracticeWorkspace({
           <p className="eyebrow">Practice Text</p>
           <h2>{text.title}</h2>
         </div>
-        <div className="mode-toggle">
-          <button className="button secondary" type="button" aria-pressed="false">
-            Reader
-          </button>
-          <button className="button primary" type="button" aria-pressed="true">
-            Lab
-          </button>
-        </div>
+        <p className="mode-indicator">Mode: Lab</p>
       </div>
       <div className="sentence-list">
         {sentences.map((sentence) => (
