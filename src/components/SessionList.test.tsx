@@ -7,13 +7,13 @@ import type { Attempt, PracticeSession } from "../domain/types";
 
 class SlowSessionRepository extends InMemoryRepository {
   addAttemptCount = 0;
-  createSessionStarted?: Promise<void>;
-  resolveCreateSession?: () => void;
+  createSessionStarts: Promise<void>[] = [];
+  resolveCreateSessions: Array<() => void> = [];
 
   async createSession(textId: string): Promise<PracticeSession> {
-    this.createSessionStarted = Promise.resolve();
+    this.createSessionStarts.push(Promise.resolve());
     await new Promise<void>((resolve) => {
-      this.resolveCreateSession = resolve;
+      this.resolveCreateSessions.push(resolve);
     });
     return super.createSession(textId);
   }
@@ -90,7 +90,7 @@ describe("Sessions screen", () => {
     expect(await repository.listSessions()).toHaveLength(1);
   });
 
-  it("does not persist a stale compare when the selected sentence changes", async () => {
+  it("does not visibly persist a stale compare when the selected sentence changes", async () => {
     const user = userEvent.setup();
     const repository = new SlowSessionRepository();
     render(<App repository={repository} />);
@@ -99,13 +99,36 @@ describe("Sessions screen", () => {
     await prepareRecording(user);
 
     await user.click(screen.getByRole("button", { name: "Compare" }));
-    await repository.createSessionStarted;
+    await repository.createSessionStarts[0];
     await user.click(screen.getByRole("button", { name: "Salut." }));
-    repository.resolveCreateSession?.();
+    repository.resolveCreateSessions[0]?.();
     await user.click(screen.getByRole("button", { name: "Sessions" }));
 
     expect(screen.getByText("No sessions yet.")).toBeInTheDocument();
     expect(repository.addAttemptCount).toBe(0);
+  });
+
+  it("does not let a stale pending session split later attempts", async () => {
+    const user = userEvent.setup();
+    const repository = new SlowSessionRepository();
+    render(<App repository={repository} />);
+
+    await createPracticeText(user, "Cafe dialogue", "Bonjour. Salut.");
+    await prepareRecording(user);
+
+    await user.click(screen.getByRole("button", { name: "Compare" }));
+    await repository.createSessionStarts[0];
+    await user.click(screen.getByRole("button", { name: "Salut." }));
+    await prepareRecording(user);
+    await user.click(screen.getByRole("button", { name: "Compare" }));
+    repository.resolveCreateSessions[0]?.();
+    await user.click(screen.getByRole("button", { name: "Compare" }));
+    await user.click(screen.getByRole("button", { name: "Sessions" }));
+
+    expect(screen.getByText("Cafe dialogue")).toBeInTheDocument();
+    expect(screen.getByText("2 attempts")).toBeInTheDocument();
+    expect(screen.queryByText("1 attempt")).not.toBeInTheDocument();
+    expect(repository.createSessionStarts).toHaveLength(1);
   });
 
   it("updates the active navigation state when switching to Sessions", async () => {

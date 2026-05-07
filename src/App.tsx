@@ -43,6 +43,11 @@ interface AppProps {
 
 type Screen = "texts" | "sessions";
 
+interface SessionCreation {
+  textId: string;
+  promise: Promise<string>;
+}
+
 export default function App({
   repository: providedRepository,
   ttsAdapter = defaultTtsAdapter,
@@ -69,9 +74,7 @@ export default function App({
   const selectedSentenceIdRef = useRef<string | undefined>(undefined);
   const selectedTextIdRef = useRef<string | undefined>(undefined);
   const activeSessionIdRef = useRef<string | undefined>(undefined);
-  const sessionCreationPromiseRef = useRef<Promise<string> | undefined>(
-    undefined,
-  );
+  const sessionCreationRef = useRef<SessionCreation | undefined>(undefined);
 
   const selectedText = useMemo(
     () => texts.find((text) => text.id === selectedTextId),
@@ -133,8 +136,12 @@ export default function App({
 
     setAnalysis(result);
 
-    const sessionId = await getOrCreateActiveSession(textId, isCurrentCompareRun);
+    const sessionId = await getOrCreateActiveSession(
+      textId,
+      isCurrentCompareRun,
+    );
     if (!isCurrentCompareRun()) return;
+    if (!sessionId) return;
 
     await repository.addAttempt({
       sessionId,
@@ -146,7 +153,7 @@ export default function App({
     });
     if (!isCurrentCompareRun()) return;
 
-    setSessions(await repository.listSessions());
+    setSessions(filterMeaningfulSessions(await repository.listSessions()));
   }
 
   async function getOrCreateActiveSession(
@@ -158,27 +165,42 @@ export default function App({
 
     if (!isCurrentCompareRun()) return "";
 
-    if (sessionCreationPromiseRef.current) {
-      return sessionCreationPromiseRef.current;
+    const pendingSessionCreation = sessionCreationRef.current;
+    if (pendingSessionCreation?.textId === textId) {
+      const sessionId = await pendingSessionCreation.promise;
+      if (isCurrentCompareRun()) {
+        activeSessionIdRef.current = sessionId;
+        setActiveSessionId(sessionId);
+        return sessionId;
+      }
+      return "";
     }
 
     const sessionCreationPromise = repository
       .createSession(textId)
-      .then((session) => {
-        if (isCurrentCompareRun()) {
-          activeSessionIdRef.current = session.id;
-          setActiveSessionId(session.id);
-        }
-        return session.id;
-      })
+      .then((session) => session.id)
       .finally(() => {
-        if (sessionCreationPromiseRef.current === sessionCreationPromise) {
-          sessionCreationPromiseRef.current = undefined;
+        if (sessionCreationRef.current?.promise === sessionCreationPromise) {
+          sessionCreationRef.current = undefined;
         }
       });
-    sessionCreationPromiseRef.current = sessionCreationPromise;
+    sessionCreationRef.current = {
+      textId,
+      promise: sessionCreationPromise,
+    };
 
-    return sessionCreationPromise;
+    const sessionId = await sessionCreationPromise;
+    if (isCurrentCompareRun()) {
+      activeSessionIdRef.current = sessionId;
+      setActiveSessionId(sessionId);
+      return sessionId;
+    }
+
+    return "";
+  }
+
+  function filterMeaningfulSessions(sessionList: PracticeSession[]) {
+    return sessionList.filter((session) => session.attemptIds.length > 0);
   }
 
   function clearSentenceLabState() {
@@ -233,7 +255,7 @@ export default function App({
               selectedSentenceIdRef.current = created.sentences[0]?.id;
               setSelectedSentenceId(created.sentences[0]?.id);
               activeSessionIdRef.current = undefined;
-              sessionCreationPromiseRef.current = undefined;
+              sessionCreationRef.current = undefined;
               setActiveSessionId(undefined);
               clearSentenceLabState();
               setSpeed(0.9);
