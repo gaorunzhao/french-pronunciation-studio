@@ -1,17 +1,33 @@
 import type { PracticeSentence, TextDocument } from "../domain/types";
+import { TransportBar } from "./TransportBar";
+import { WaveformPair } from "./WaveformPair";
 
 interface PracticeWorkspaceProps {
   text?: TextDocument;
   sentences: PracticeSentence[];
   selectedSentenceId?: string;
+  hasReference: boolean;
+  hasRecording: boolean;
+  speed: number;
+  onSpeedChange(speed: number): void;
   onSelectSentence(sentenceId: string): void;
+  onPlayReference(): void;
+  onRecord(): void;
+  onCompare(): void;
 }
 
 export function PracticeWorkspace({
   text,
   sentences,
   selectedSentenceId,
+  hasReference,
+  hasRecording,
+  speed,
+  onSpeedChange,
   onSelectSentence,
+  onPlayReference,
+  onRecord,
+  onCompare,
 }: PracticeWorkspaceProps) {
   if (!text) {
     return (
@@ -23,17 +39,17 @@ export function PracticeWorkspace({
   }
 
   return (
-    <section>
+    <section className="practice-layout">
       <div className="workspace-header">
         <div>
           <p className="eyebrow">Practice Text</p>
           <h2>{text.title}</h2>
         </div>
         <div className="mode-toggle">
-          <button className="button secondary" type="button">
+          <button className="button secondary" type="button" aria-pressed="false">
             Reader
           </button>
-          <button className="button secondary" type="button">
+          <button className="button primary" type="button" aria-pressed="true">
             Lab
           </button>
         </div>
@@ -55,6 +71,14 @@ export function PracticeWorkspace({
           </button>
         ))}
       </div>
+      <WaveformPair hasReference={hasReference} hasRecording={hasRecording} />
+      <TransportBar
+        speed={speed}
+        onSpeedChange={onSpeedChange}
+        onPlayReference={onPlayReference}
+        onRecord={onRecord}
+        onCompare={onCompare}
+      />
     </section>
   );
 }
