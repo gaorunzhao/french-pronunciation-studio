@@ -1,18 +1,17 @@
 export default function App() {
   return (
     <main className="app-shell">
-      <aside className="sidebar" aria-label="Primary">
+      <aside className="sidebar" aria-label="App sidebar">
         <h1 className="app-title">French Pronunciation Studio</h1>
         <nav className="nav-stack" aria-label="Main navigation">
           <button
             className="nav-button active"
             type="button"
             aria-current="page"
-            aria-pressed={true}
           >
             Texts
           </button>
-          <button className="nav-button" type="button" aria-pressed={false}>
+          <button className="nav-button" type="button">
             Sessions
           </button>
         </nav>

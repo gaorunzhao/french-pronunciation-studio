@@ -82,7 +82,7 @@ button {
   color: var(--color-text);
 }
 
-@media (max-width: 979px) {
+@media (max-width: 1079px) {
   .app-shell {
     grid-template-columns: 1fr;
   }

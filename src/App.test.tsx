@@ -15,11 +15,14 @@ describe("App", () => {
 
     expect(textsButton).toBeInTheDocument();
     expect(textsButton).toHaveAttribute("aria-current", "page");
-    expect(textsButton).toHaveAttribute("aria-pressed", "true");
+    expect(textsButton).not.toHaveAttribute("aria-pressed");
     expect(sessionsButton).toBeInTheDocument();
-    expect(sessionsButton).toHaveAttribute("aria-pressed", "false");
+    expect(sessionsButton).not.toHaveAttribute("aria-pressed");
+    expect(sessionsButton).not.toHaveAttribute("aria-current");
     expect(screen.getByText("French Pronunciation Studio")).toBeInTheDocument();
-    expect(screen.getByRole("complementary", { name: "Primary" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("complementary", { name: "App sidebar" })
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: "Practice workspace" })
     ).toBeInTheDocument();
