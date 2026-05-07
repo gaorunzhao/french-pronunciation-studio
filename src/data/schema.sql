@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS sentences (
   text_id TEXT NOT NULL REFERENCES texts(id) ON DELETE CASCADE,
   sentence_index INTEGER NOT NULL,
   body TEXT NOT NULL,
-  state TEXT NOT NULL CHECK (state IN ('new', 'practiced', 'needs-repeat', 'stable'))
+  state TEXT NOT NULL CHECK (state IN ('new', 'practiced', 'needs-repeat', 'stable')),
+  UNIQUE(text_id, sentence_index)
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -49,3 +50,11 @@ CREATE TABLE IF NOT EXISTS model_settings (
   style_strength REAL NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_sentences_text_id ON sentences(text_id);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_text_id ON sessions(text_id);
+
+CREATE INDEX IF NOT EXISTS idx_attempts_session_id ON attempts(session_id);
+
+CREATE INDEX IF NOT EXISTS idx_attempts_sentence_id ON attempts(sentence_id);
