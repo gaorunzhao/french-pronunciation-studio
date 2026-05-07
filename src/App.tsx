@@ -1,11 +1,13 @@
 import { useMemo, useRef, useState } from "react";
 import { FeedbackPanel } from "./components/FeedbackPanel";
 import { PracticeWorkspace } from "./components/PracticeWorkspace";
+import { SessionList } from "./components/SessionList";
 import { TextImport } from "./components/TextImport";
 import { InMemoryRepository } from "./data/inMemoryRepository";
 import type { StudioRepository } from "./data/repository";
 import type {
   AnalysisResult,
+  PracticeSession,
   PracticeSentence,
   TextDocument,
   VoiceSettings,
@@ -39,6 +41,8 @@ interface AppProps {
   analyzerAdapter?: AnalyzerAdapter;
 }
 
+type Screen = "texts" | "sessions";
+
 export default function App({
   repository: providedRepository,
   ttsAdapter = defaultTtsAdapter,
@@ -48,10 +52,13 @@ export default function App({
   const [repository] = useState<StudioRepository>(
     () => providedRepository ?? new InMemoryRepository(),
   );
+  const [screen, setScreen] = useState<Screen>("texts");
   const [texts, setTexts] = useState<TextDocument[]>([]);
   const [sentences, setSentences] = useState<PracticeSentence[]>([]);
+  const [sessions, setSessions] = useState<PracticeSession[]>([]);
   const [selectedTextId, setSelectedTextId] = useState<string>();
   const [selectedSentenceId, setSelectedSentenceId] = useState<string>();
+  const [activeSessionId, setActiveSessionId] = useState<string>();
   const [hasReference, setHasReference] = useState(false);
   const [hasRecording, setHasRecording] = useState(false);
   const [referenceDurationMs, setReferenceDurationMs] = useState(0);
@@ -98,6 +105,7 @@ export default function App({
     if (!selectedSentence || !hasRecording) return;
 
     const sentenceId = selectedSentence.id;
+    const textId = selectedSentence.textId;
     const transcription = await asrAdapter.transcribe({
       recordingPath: "mock://recording/bonjour.wav",
       fallbackText: selectedSentence.text,
@@ -113,6 +121,27 @@ export default function App({
     if (selectedSentenceIdRef.current !== sentenceId) return;
 
     setAnalysis(result);
+
+    let sessionId = activeSessionId;
+    if (!sessionId) {
+      const session = await repository.createSession(textId);
+      if (selectedSentenceIdRef.current !== sentenceId) return;
+
+      sessionId = session.id;
+      setActiveSessionId(session.id);
+    }
+
+    await repository.addAttempt({
+      sessionId,
+      sentenceId,
+      recordingPath: "mock://recording/bonjour.wav",
+      durationMs: recordingDurationMs || transcription.durationMs,
+      recognizedText: transcription.text,
+      analysis: result,
+    });
+    if (selectedSentenceIdRef.current !== sentenceId) return;
+
+    setSessions(await repository.listSessions());
   }
 
   function clearSentenceLabState() {
@@ -138,46 +167,61 @@ export default function App({
         <h1 className="app-title">French Pronunciation Studio</h1>
         <nav className="nav-stack" aria-label="Main navigation">
           <button
-            className="nav-button active"
+            className={screen === "texts" ? "nav-button active" : "nav-button"}
             type="button"
-            aria-current="page"
+            aria-current={screen === "texts" ? "page" : undefined}
+            onClick={() => setScreen("texts")}
           >
             Texts
           </button>
-          <button className="nav-button" type="button">
+          <button
+            className={
+              screen === "sessions" ? "nav-button active" : "nav-button"
+            }
+            type="button"
+            aria-current={screen === "sessions" ? "page" : undefined}
+            onClick={() => setScreen("sessions")}
+          >
             Sessions
           </button>
         </nav>
-        <TextImport
-          onCreate={async (input) => {
-            const created = await repository.createText(input);
-            setTexts(await repository.listTexts());
-            setSentences(created.sentences);
-            setSelectedTextId(created.text.id);
-            selectedSentenceIdRef.current = created.sentences[0]?.id;
-            setSelectedSentenceId(created.sentences[0]?.id);
-            clearSentenceLabState();
-            setSpeed(0.9);
-          }}
-        />
+        {screen === "texts" ? (
+          <TextImport
+            onCreate={async (input) => {
+              const created = await repository.createText(input);
+              setTexts(await repository.listTexts());
+              setSentences(created.sentences);
+              setSelectedTextId(created.text.id);
+              selectedSentenceIdRef.current = created.sentences[0]?.id;
+              setSelectedSentenceId(created.sentences[0]?.id);
+              setActiveSessionId(undefined);
+              clearSentenceLabState();
+              setSpeed(0.9);
+            }}
+          />
+        ) : null}
       </aside>
       <section className="workspace" aria-label="Practice workspace">
-        <PracticeWorkspace
-          text={selectedText}
-          sentences={sentences}
-          selectedSentenceId={selectedSentenceId}
-          hasReference={hasReference}
-          hasRecording={hasRecording}
-          speed={speed}
-          isLooping={isLooping}
-          canCompare={hasRecording}
-          onSpeedChange={setSpeed}
-          onSelectSentence={selectSentence}
-          onPlayReference={playReference}
-          onRecord={record}
-          onCompare={compare}
-          onToggleLoop={() => setIsLooping((current) => !current)}
-        />
+        {screen === "texts" ? (
+          <PracticeWorkspace
+            text={selectedText}
+            sentences={sentences}
+            selectedSentenceId={selectedSentenceId}
+            hasReference={hasReference}
+            hasRecording={hasRecording}
+            speed={speed}
+            isLooping={isLooping}
+            canCompare={hasRecording}
+            onSpeedChange={setSpeed}
+            onSelectSentence={selectSentence}
+            onPlayReference={playReference}
+            onRecord={record}
+            onCompare={compare}
+            onToggleLoop={() => setIsLooping((current) => !current)}
+          />
+        ) : (
+          <SessionList sessions={sessions} texts={texts} />
+        )}
       </section>
       <FeedbackPanel
         analysis={analysis}

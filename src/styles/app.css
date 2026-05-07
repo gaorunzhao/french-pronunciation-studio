@@ -305,3 +305,25 @@ button {
 .muted {
   color: var(--color-muted);
 }
+
+.session-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.session-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: 14px;
+}
+
+.session-card h3 {
+  margin: 0 0 6px;
+}
+
+.session-card p {
+  margin: 0;
+  color: var(--color-muted);
+}
