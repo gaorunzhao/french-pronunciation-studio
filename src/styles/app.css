@@ -1,0 +1,84 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 960px;
+  background: var(--color-app-bg);
+  color: var(--color-text);
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 220px minmax(560px, 1fr) 300px;
+  background: var(--color-app-bg);
+}
+
+.sidebar {
+  background: var(--color-sidebar);
+  border-right: 1px solid var(--color-border);
+  padding: 18px;
+}
+
+.workspace {
+  background: var(--color-surface-warm);
+  padding: 20px;
+  min-width: 0;
+}
+
+.feedback-panel {
+  background: var(--color-panel);
+  border-left: 1px solid var(--color-border);
+  padding: 18px;
+}
+
+.app-title {
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 760;
+  margin: 0 0 18px;
+}
+
+.nav-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.nav-button,
+.button {
+  height: 36px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 0 12px;
+  background: #e2ddd4;
+  color: var(--color-text);
+  font-weight: 680;
+}
+
+.nav-button {
+  width: 100%;
+  text-align: left;
+}
+
+.nav-button.active,
+.button.primary {
+  background: var(--color-blue);
+  color: #ffffff;
+}
+
+.button.secondary {
+  background: #e2ddd4;
+  color: var(--color-text);
+}
