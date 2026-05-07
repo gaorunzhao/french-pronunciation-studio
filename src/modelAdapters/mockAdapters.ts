@@ -14,7 +14,8 @@ import type {
 export class MockTtsAdapter implements TtsAdapter {
   async generate(input: GenerateTtsInput): Promise<GeneratedAudio> {
     const wordCount = input.text.split(/\s+/).filter(Boolean).length;
-    const durationMs = Math.max(800, Math.round((wordCount * 520) / input.voice.speed));
+    const speed = Number.isFinite(input.voice.speed) && input.voice.speed > 0 ? input.voice.speed : 1;
+    const durationMs = Math.max(800, Math.round((wordCount * 520) / speed));
     return {
       audioPath: `mock://tts/${input.sentenceId}-${input.voice.voiceId}-${input.voice.speed}-${input.voice.styleStrength}.wav`,
       durationMs
