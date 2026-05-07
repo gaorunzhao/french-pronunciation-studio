@@ -26,9 +26,12 @@ export function compareExpectedToRecognized(
 
 export function analyzePronunciationAttempt(input: AnalyzeInput): AnalysisResult {
   const words = compareExpectedToRecognized(input.expectedText, input.recognizedText);
-  const mismatchCount = words.filter((word) => word.status !== "match").length;
-  const ratio = input.recordingDurationMs / input.referenceDurationMs;
-  const timingStatus = ratio < 0.75 ? "too-fast" : ratio > 1.35 ? "too-slow" : "similar";
+  const expectedWordCount = tokenize(input.expectedText).length;
+  const recognizedWordCount = tokenize(input.recognizedText).length;
+  const extraRecognizedWordCount = Math.max(0, recognizedWordCount - expectedWordCount);
+  const mismatchCount =
+    words.filter((word) => word.status !== "match").length + extraRecognizedWordCount;
+  const timingStatus = getTimingStatus(input.referenceDurationMs, input.recordingDurationMs);
 
   return {
     words,
@@ -40,10 +43,10 @@ export function analyzePronunciationAttempt(input: AnalyzeInput): AnalysisResult
 
 function tokenize(text: string): string[] {
   return text
-    .split(/\s+/)
+    .split(/[\s-]+/)
     .map((word) => word.trim())
-    .filter(Boolean)
-    .map((word) => word.replace(/^[,;:!?."']+|[,;:!?."']+$/g, ""));
+    .map((word) => word.replace(/^[,;:!?."']+|[,;:!?."']+$/g, ""))
+    .filter(Boolean);
 }
 
 function normalizeWord(word: string): string {
@@ -51,4 +54,21 @@ function normalizeWord(word: string): string {
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
     .toLowerCase();
+}
+
+function getTimingStatus(
+  referenceDurationMs: number,
+  recordingDurationMs: number
+): AnalysisResult["timingStatus"] {
+  if (
+    !Number.isFinite(referenceDurationMs) ||
+    !Number.isFinite(recordingDurationMs) ||
+    referenceDurationMs <= 0 ||
+    recordingDurationMs <= 0
+  ) {
+    return "similar";
+  }
+
+  const ratio = recordingDurationMs / referenceDurationMs;
+  return ratio < 0.75 ? "too-fast" : ratio > 1.35 ? "too-slow" : "similar";
 }
