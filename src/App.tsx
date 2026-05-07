@@ -1,4 +1,22 @@
+import { useMemo, useState } from "react";
+import { PracticeWorkspace } from "./components/PracticeWorkspace";
+import { TextImport } from "./components/TextImport";
+import { InMemoryRepository } from "./data/inMemoryRepository";
+import type { PracticeSentence, TextDocument } from "./domain/types";
+
+const repository = new InMemoryRepository();
+
 export default function App() {
+  const [texts, setTexts] = useState<TextDocument[]>([]);
+  const [sentences, setSentences] = useState<PracticeSentence[]>([]);
+  const [selectedTextId, setSelectedTextId] = useState<string>();
+  const [selectedSentenceId, setSelectedSentenceId] = useState<string>();
+
+  const selectedText = useMemo(
+    () => texts.find((text) => text.id === selectedTextId),
+    [selectedTextId, texts],
+  );
+
   return (
     <main className="app-shell">
       <aside className="sidebar" aria-label="App sidebar">
@@ -15,9 +33,23 @@ export default function App() {
             Sessions
           </button>
         </nav>
+        <TextImport
+          onCreate={async (input) => {
+            const created = await repository.createText(input);
+            setTexts(await repository.listTexts());
+            setSentences(created.sentences);
+            setSelectedTextId(created.text.id);
+            setSelectedSentenceId(created.sentences[0]?.id);
+          }}
+        />
       </aside>
       <section className="workspace" aria-label="Practice workspace">
-        <h2>Practice</h2>
+        <PracticeWorkspace
+          text={selectedText}
+          sentences={sentences}
+          selectedSentenceId={selectedSentenceId}
+          onSelectSentence={setSelectedSentenceId}
+        />
       </section>
       <aside className="feedback-panel" aria-label="Feedback">
         <h2>Feedback</h2>
