@@ -67,6 +67,11 @@ export default function App({
   const [speed, setSpeed] = useState(0.9);
   const [isLooping, setIsLooping] = useState(false);
   const selectedSentenceIdRef = useRef<string | undefined>(undefined);
+  const selectedTextIdRef = useRef<string | undefined>(undefined);
+  const activeSessionIdRef = useRef<string | undefined>(undefined);
+  const sessionCreationPromiseRef = useRef<Promise<string> | undefined>(
+    undefined,
+  );
 
   const selectedText = useMemo(
     () => texts.find((text) => text.id === selectedTextId),
@@ -106,11 +111,17 @@ export default function App({
 
     const sentenceId = selectedSentence.id;
     const textId = selectedSentence.textId;
+    const isCurrentCompareRun = () =>
+      selectedSentenceIdRef.current === sentenceId &&
+      selectedTextIdRef.current === textId;
+
+    if (!isCurrentCompareRun()) return;
+
     const transcription = await asrAdapter.transcribe({
       recordingPath: "mock://recording/bonjour.wav",
       fallbackText: selectedSentence.text,
     });
-    if (selectedSentenceIdRef.current !== sentenceId) return;
+    if (!isCurrentCompareRun()) return;
 
     const result = await analyzerAdapter.analyze({
       expectedText: selectedSentence.text,
@@ -118,18 +129,12 @@ export default function App({
       referenceDurationMs: referenceDurationMs || 1000,
       recordingDurationMs: recordingDurationMs || transcription.durationMs,
     });
-    if (selectedSentenceIdRef.current !== sentenceId) return;
+    if (!isCurrentCompareRun()) return;
 
     setAnalysis(result);
 
-    let sessionId = activeSessionId;
-    if (!sessionId) {
-      const session = await repository.createSession(textId);
-      if (selectedSentenceIdRef.current !== sentenceId) return;
-
-      sessionId = session.id;
-      setActiveSessionId(session.id);
-    }
+    const sessionId = await getOrCreateActiveSession(textId, isCurrentCompareRun);
+    if (!isCurrentCompareRun()) return;
 
     await repository.addAttempt({
       sessionId,
@@ -139,9 +144,41 @@ export default function App({
       recognizedText: transcription.text,
       analysis: result,
     });
-    if (selectedSentenceIdRef.current !== sentenceId) return;
+    if (!isCurrentCompareRun()) return;
 
     setSessions(await repository.listSessions());
+  }
+
+  async function getOrCreateActiveSession(
+    textId: string,
+    isCurrentCompareRun: () => boolean,
+  ) {
+    const existingSessionId = activeSessionIdRef.current ?? activeSessionId;
+    if (existingSessionId) return existingSessionId;
+
+    if (!isCurrentCompareRun()) return "";
+
+    if (sessionCreationPromiseRef.current) {
+      return sessionCreationPromiseRef.current;
+    }
+
+    const sessionCreationPromise = repository
+      .createSession(textId)
+      .then((session) => {
+        if (isCurrentCompareRun()) {
+          activeSessionIdRef.current = session.id;
+          setActiveSessionId(session.id);
+        }
+        return session.id;
+      })
+      .finally(() => {
+        if (sessionCreationPromiseRef.current === sessionCreationPromise) {
+          sessionCreationPromiseRef.current = undefined;
+        }
+      });
+    sessionCreationPromiseRef.current = sessionCreationPromise;
+
+    return sessionCreationPromise;
   }
 
   function clearSentenceLabState() {
@@ -192,8 +229,11 @@ export default function App({
               setTexts(await repository.listTexts());
               setSentences(created.sentences);
               setSelectedTextId(created.text.id);
+              selectedTextIdRef.current = created.text.id;
               selectedSentenceIdRef.current = created.sentences[0]?.id;
               setSelectedSentenceId(created.sentences[0]?.id);
+              activeSessionIdRef.current = undefined;
+              sessionCreationPromiseRef.current = undefined;
               setActiveSessionId(undefined);
               clearSentenceLabState();
               setSpeed(0.9);
