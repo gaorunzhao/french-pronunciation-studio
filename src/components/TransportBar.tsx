@@ -1,6 +1,7 @@
 interface TransportBarProps {
   speed: number;
   isLooping: boolean;
+  canCompare: boolean;
   onSpeedChange(speed: number): void;
   onPlayReference(): void;
   onRecord(): void;
@@ -11,6 +12,7 @@ interface TransportBarProps {
 export function TransportBar({
   speed,
   isLooping,
+  canCompare,
   onSpeedChange,
   onPlayReference,
   onRecord,
@@ -25,7 +27,12 @@ export function TransportBar({
       <button className="button secondary" type="button" onClick={onRecord}>
         Record
       </button>
-      <button className="button secondary" type="button" onClick={onCompare}>
+      <button
+        className="button secondary"
+        type="button"
+        disabled={!canCompare}
+        onClick={onCompare}
+      >
         Compare
       </button>
       <button

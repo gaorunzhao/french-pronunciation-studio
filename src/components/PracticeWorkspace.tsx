@@ -10,6 +10,7 @@ interface PracticeWorkspaceProps {
   hasRecording: boolean;
   speed: number;
   isLooping: boolean;
+  canCompare: boolean;
   onSpeedChange(speed: number): void;
   onSelectSentence(sentenceId: string): void;
   onPlayReference(): void;
@@ -26,6 +27,7 @@ export function PracticeWorkspace({
   hasRecording,
   speed,
   isLooping,
+  canCompare,
   onSpeedChange,
   onSelectSentence,
   onPlayReference,
@@ -72,6 +74,7 @@ export function PracticeWorkspace({
       <TransportBar
         speed={speed}
         isLooping={isLooping}
+        canCompare={canCompare}
         onSpeedChange={onSpeedChange}
         onPlayReference={onPlayReference}
         onRecord={onRecord}

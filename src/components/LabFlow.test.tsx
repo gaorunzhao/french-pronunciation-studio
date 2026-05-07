@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
+import type { AnalyzeInput, GenerateTtsInput } from "../modelAdapters/types";
 
 describe("Lab flow", () => {
   it("shows neutral feedback before compare", async () => {
@@ -10,6 +11,9 @@ describe("Lab flow", () => {
     expect(
       screen.getByText("Record and compare to see feedback."),
     ).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Record and compare to see feedback.",
+    );
     expect(screen.queryByText("No repeat needed.")).not.toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Text title"), "Cafe dialogue");
@@ -41,6 +45,130 @@ describe("Lab flow", () => {
     expect(screen.getByText("Reference Audio")).toBeInTheDocument();
     expect(screen.getByText("Your Recording")).toBeInTheDocument();
     expect(screen.getByText("No repeat needed.")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("No repeat needed.");
+  });
+
+  it("disables compare until a recording exists", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("Text title"), "Cafe dialogue");
+    await user.type(screen.getByLabelText("French text"), "Bonjour.");
+    await user.click(
+      screen.getByRole("button", { name: "Create practice text" }),
+    );
+
+    const compareButton = screen.getByRole("button", { name: "Compare" });
+
+    expect(compareButton).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Record" }));
+
+    expect(compareButton).not.toBeDisabled();
+  });
+
+  it("ignores stale reference generation after selecting another sentence", async () => {
+    const user = userEvent.setup();
+    let resolveReference: (() => void) | undefined;
+    const slowTtsAdapter = {
+      generate: vi.fn(
+        (_input: GenerateTtsInput) =>
+          new Promise<{ audioPath: string; durationMs: number }>((resolve) => {
+            resolveReference = () =>
+              resolve({ audioPath: "mock://tts/slow.wav", durationMs: 1000 });
+          }),
+      ),
+    };
+
+    render(
+      <App
+        {...({
+          ttsAdapter: slowTtsAdapter,
+        } as Parameters<typeof App>[0])}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Text title"), "Cafe dialogue");
+    await user.type(screen.getByLabelText("French text"), "Bonjour. Bonsoir.");
+    await user.click(
+      screen.getByRole("button", { name: "Create practice text" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Play reference" }));
+
+    expect(slowTtsAdapter.generate).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Bonsoir." }));
+
+    resolveReference?.();
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("img", { name: "Reference audio not generated" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("img", { name: "Reference audio ready" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("ignores stale comparison results after selecting another sentence", async () => {
+    const user = userEvent.setup();
+    let resolveAnalysis: (() => void) | undefined;
+    const asrAdapter = {
+      transcribe: vi.fn(async () => ({ text: "Bonjour", durationMs: 1000 })),
+    };
+    const analyzerAdapter = {
+      analyze: vi.fn(
+        (_input: AnalyzeInput) =>
+          new Promise<{
+            words: [{ expected: string; status: "match" }];
+            mismatchCount: number;
+            timingStatus: "similar";
+            needsRepeat: boolean;
+          }>((resolve) => {
+            resolveAnalysis = () =>
+              resolve({
+                words: [{ expected: "Bonjour", status: "match" }],
+                mismatchCount: 0,
+                timingStatus: "similar",
+                needsRepeat: false,
+              });
+          }),
+      ),
+    };
+
+    render(
+      <App
+        {...({
+          asrAdapter,
+          analyzerAdapter,
+        } as Parameters<typeof App>[0])}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("Text title"), "Cafe dialogue");
+    await user.type(screen.getByLabelText("French text"), "Bonjour. Bonsoir.");
+    await user.click(
+      screen.getByRole("button", { name: "Create practice text" }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Record" }));
+    await user.click(screen.getByRole("button", { name: "Compare" }));
+
+    expect(asrAdapter.transcribe).toHaveBeenCalledTimes(1);
+    expect(analyzerAdapter.analyze).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Bonsoir." }));
+
+    resolveAnalysis?.();
+
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Record and compare to see feedback.",
+      ),
+    );
+    expect(screen.queryByText("No repeat needed.")).not.toBeInTheDocument();
   });
 
   it("clears feedback and waveform state when selecting a different sentence", async () => {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { FeedbackPanel } from "./components/FeedbackPanel";
 import { PracticeWorkspace } from "./components/PracticeWorkspace";
 import { TextImport } from "./components/TextImport";
@@ -15,10 +15,15 @@ import {
   MockAsrAdapter,
   MockTtsAdapter,
 } from "./modelAdapters/mockAdapters";
+import type {
+  AnalyzerAdapter,
+  AsrAdapter,
+  TtsAdapter,
+} from "./modelAdapters/types";
 
-const ttsAdapter = new MockTtsAdapter();
-const asrAdapter = new MockAsrAdapter();
-const analyzerAdapter = new MockAnalyzerAdapter();
+const defaultTtsAdapter = new MockTtsAdapter();
+const defaultAsrAdapter = new MockAsrAdapter();
+const defaultAnalyzerAdapter = new MockAnalyzerAdapter();
 
 const defaultVoice: VoiceSettings = {
   engine: "mock",
@@ -29,9 +34,17 @@ const defaultVoice: VoiceSettings = {
 
 interface AppProps {
   repository?: StudioRepository;
+  ttsAdapter?: TtsAdapter;
+  asrAdapter?: AsrAdapter;
+  analyzerAdapter?: AnalyzerAdapter;
 }
 
-export default function App({ repository: providedRepository }: AppProps) {
+export default function App({
+  repository: providedRepository,
+  ttsAdapter = defaultTtsAdapter,
+  asrAdapter = defaultAsrAdapter,
+  analyzerAdapter = defaultAnalyzerAdapter,
+}: AppProps) {
   const [repository] = useState<StudioRepository>(
     () => providedRepository ?? new InMemoryRepository(),
   );
@@ -46,6 +59,7 @@ export default function App({ repository: providedRepository }: AppProps) {
   const [analysis, setAnalysis] = useState<AnalysisResult>();
   const [speed, setSpeed] = useState(0.9);
   const [isLooping, setIsLooping] = useState(false);
+  const selectedSentenceIdRef = useRef<string | undefined>(undefined);
 
   const selectedText = useMemo(
     () => texts.find((text) => text.id === selectedTextId),
@@ -59,11 +73,14 @@ export default function App({ repository: providedRepository }: AppProps) {
   async function playReference() {
     if (!selectedSentence) return;
 
+    const sentenceId = selectedSentence.id;
     const generated = await ttsAdapter.generate({
-      sentenceId: selectedSentence.id,
+      sentenceId,
       text: selectedSentence.text,
       voice: { ...defaultVoice, speed },
     });
+    if (selectedSentenceIdRef.current !== sentenceId) return;
+
     setHasReference(true);
     setReferenceDurationMs(generated.durationMs);
   }
@@ -78,18 +95,23 @@ export default function App({ repository: providedRepository }: AppProps) {
   }
 
   async function compare() {
-    if (!selectedSentence) return;
+    if (!selectedSentence || !hasRecording) return;
 
+    const sentenceId = selectedSentence.id;
     const transcription = await asrAdapter.transcribe({
       recordingPath: "mock://recording/bonjour.wav",
       fallbackText: selectedSentence.text,
     });
+    if (selectedSentenceIdRef.current !== sentenceId) return;
+
     const result = await analyzerAdapter.analyze({
       expectedText: selectedSentence.text,
       recognizedText: transcription.text,
       referenceDurationMs: referenceDurationMs || 1000,
       recordingDurationMs: recordingDurationMs || transcription.durationMs,
     });
+    if (selectedSentenceIdRef.current !== sentenceId) return;
+
     setAnalysis(result);
   }
 
@@ -105,6 +127,7 @@ export default function App({ repository: providedRepository }: AppProps) {
   function selectSentence(sentenceId: string) {
     if (sentenceId === selectedSentenceId) return;
 
+    selectedSentenceIdRef.current = sentenceId;
     setSelectedSentenceId(sentenceId);
     clearSentenceLabState();
   }
@@ -131,6 +154,7 @@ export default function App({ repository: providedRepository }: AppProps) {
             setTexts(await repository.listTexts());
             setSentences(created.sentences);
             setSelectedTextId(created.text.id);
+            selectedSentenceIdRef.current = created.sentences[0]?.id;
             setSelectedSentenceId(created.sentences[0]?.id);
             clearSentenceLabState();
             setSpeed(0.9);
@@ -146,6 +170,7 @@ export default function App({ repository: providedRepository }: AppProps) {
           hasRecording={hasRecording}
           speed={speed}
           isLooping={isLooping}
+          canCompare={hasRecording}
           onSpeedChange={setSpeed}
           onSelectSentence={selectSentence}
           onPlayReference={playReference}
