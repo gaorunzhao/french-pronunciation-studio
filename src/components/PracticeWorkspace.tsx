@@ -9,11 +9,13 @@ interface PracticeWorkspaceProps {
   hasReference: boolean;
   hasRecording: boolean;
   speed: number;
+  isLooping: boolean;
   onSpeedChange(speed: number): void;
   onSelectSentence(sentenceId: string): void;
   onPlayReference(): void;
   onRecord(): void;
   onCompare(): void;
+  onToggleLoop(): void;
 }
 
 export function PracticeWorkspace({
@@ -23,11 +25,13 @@ export function PracticeWorkspace({
   hasReference,
   hasRecording,
   speed,
+  isLooping,
   onSpeedChange,
   onSelectSentence,
   onPlayReference,
   onRecord,
   onCompare,
+  onToggleLoop,
 }: PracticeWorkspaceProps) {
   if (!text) {
     return (
@@ -74,10 +78,12 @@ export function PracticeWorkspace({
       <WaveformPair hasReference={hasReference} hasRecording={hasRecording} />
       <TransportBar
         speed={speed}
+        isLooping={isLooping}
         onSpeedChange={onSpeedChange}
         onPlayReference={onPlayReference}
         onRecord={onRecord}
         onCompare={onCompare}
+        onToggleLoop={onToggleLoop}
       />
     </section>
   );

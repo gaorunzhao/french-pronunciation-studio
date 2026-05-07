@@ -1,17 +1,21 @@
 interface TransportBarProps {
   speed: number;
+  isLooping: boolean;
   onSpeedChange(speed: number): void;
   onPlayReference(): void;
   onRecord(): void;
   onCompare(): void;
+  onToggleLoop(): void;
 }
 
 export function TransportBar({
   speed,
+  isLooping,
   onSpeedChange,
   onPlayReference,
   onRecord,
   onCompare,
+  onToggleLoop,
 }: TransportBarProps) {
   return (
     <div className="transport-bar">
@@ -24,7 +28,12 @@ export function TransportBar({
       <button className="button secondary" type="button" onClick={onCompare}>
         Compare
       </button>
-      <button className="button secondary" type="button">
+      <button
+        className={isLooping ? "button primary" : "button secondary"}
+        type="button"
+        aria-pressed={isLooping}
+        onClick={onToggleLoop}
+      >
         Loop
       </button>
       <label className="speed-control">

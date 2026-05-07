@@ -45,6 +45,7 @@ export default function App({ repository: providedRepository }: AppProps) {
   const [recordingDurationMs, setRecordingDurationMs] = useState(0);
   const [analysis, setAnalysis] = useState<AnalysisResult>();
   const [speed, setSpeed] = useState(0.9);
+  const [isLooping, setIsLooping] = useState(false);
 
   const selectedText = useMemo(
     () => texts.find((text) => text.id === selectedTextId),
@@ -120,6 +121,8 @@ export default function App({ repository: providedRepository }: AppProps) {
             setReferenceDurationMs(0);
             setRecordingDurationMs(0);
             setAnalysis(undefined);
+            setSpeed(0.9);
+            setIsLooping(false);
           }}
         />
       </aside>
@@ -131,11 +134,13 @@ export default function App({ repository: providedRepository }: AppProps) {
           hasReference={hasReference}
           hasRecording={hasRecording}
           speed={speed}
+          isLooping={isLooping}
           onSpeedChange={setSpeed}
           onSelectSentence={setSelectedSentenceId}
           onPlayReference={playReference}
           onRecord={record}
           onCompare={compare}
+          onToggleLoop={() => setIsLooping((current) => !current)}
         />
       </section>
       <FeedbackPanel
