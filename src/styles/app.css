@@ -127,6 +127,13 @@ button {
   resize: vertical;
 }
 
+.form-error {
+  margin: 0;
+  color: #9d2f2f;
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .workspace-header {
   display: flex;
   justify-content: space-between;

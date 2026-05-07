@@ -33,7 +33,7 @@ export function PracticeWorkspace({
           <button className="button secondary" type="button">
             Reader
           </button>
-          <button className="button primary" type="button">
+          <button className="button secondary" type="button">
             Lab
           </button>
         </div>
@@ -48,6 +48,7 @@ export function PracticeWorkspace({
             }
             key={sentence.id}
             type="button"
+            aria-pressed={sentence.id === selectedSentenceId}
             onClick={() => onSelectSentence(sentence.id)}
           >
             {sentence.text}

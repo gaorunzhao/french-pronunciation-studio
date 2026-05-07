@@ -2,11 +2,16 @@ import { useMemo, useState } from "react";
 import { PracticeWorkspace } from "./components/PracticeWorkspace";
 import { TextImport } from "./components/TextImport";
 import { InMemoryRepository } from "./data/inMemoryRepository";
+import type { StudioRepository } from "./data/repository";
 import type { PracticeSentence, TextDocument } from "./domain/types";
 
-const repository = new InMemoryRepository();
+interface AppProps {
+  repository?: StudioRepository;
+}
 
-export default function App() {
+export default function App({ repository }: AppProps) {
+  const [defaultRepository] = useState(() => new InMemoryRepository());
+  const activeRepository = repository ?? defaultRepository;
   const [texts, setTexts] = useState<TextDocument[]>([]);
   const [sentences, setSentences] = useState<PracticeSentence[]>([]);
   const [selectedTextId, setSelectedTextId] = useState<string>();
@@ -35,8 +40,8 @@ export default function App() {
         </nav>
         <TextImport
           onCreate={async (input) => {
-            const created = await repository.createText(input);
-            setTexts(await repository.listTexts());
+            const created = await activeRepository.createText(input);
+            setTexts(await activeRepository.listTexts());
             setSentences(created.sentences);
             setSelectedTextId(created.text.id);
             setSelectedSentenceId(created.sentences[0]?.id);
