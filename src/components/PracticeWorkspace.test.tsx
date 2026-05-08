@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
+import type { GeneratedAudio, TtsAdapter } from "../modelAdapters/types";
 import { TextImport } from "./TextImport";
 
 describe("Practice workspace", () => {
@@ -32,6 +33,45 @@ describe("Practice workspace", () => {
 
     expect(firstSentence).toHaveAttribute("aria-pressed", "false");
     expect(secondSentence).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows reference generation progress and a playable audio control", async () => {
+    const user = userEvent.setup();
+    let resolveReference: () => void = () => undefined;
+    const ttsAdapter: TtsAdapter = {
+      generate: vi.fn(
+        () =>
+          new Promise<GeneratedAudio>((resolve) => {
+            resolveReference = () =>
+              resolve({
+                audioPath: "/tmp/reference.wav",
+                playbackUrl: "http://127.0.0.1:8765/audio/reference.wav",
+                durationMs: 1800,
+              });
+          }),
+      ),
+    };
+    render(<App ttsAdapter={ttsAdapter} />);
+
+    await screen.findByText("Rendez-vous a la mairie");
+
+    await user.click(screen.getByRole("button", { name: "Play reference" }));
+
+    expect(
+      screen.getByRole("button", { name: "Generating reference" }),
+    ).toBeDisabled();
+    expect(screen.getByText("Generating reference audio...")).toBeInTheDocument();
+
+    resolveReference();
+
+    const player = await screen.findByLabelText("Reference audio player");
+    expect(player).toHaveAttribute(
+      "src",
+      "http://127.0.0.1:8765/audio/reference.wav",
+    );
+    expect(
+      screen.getByRole("img", { name: "Reference audio ready" }),
+    ).toBeInTheDocument();
   });
 });
 

@@ -8,6 +8,9 @@ interface PracticeWorkspaceProps {
   selectedSentenceId?: string;
   hasReference: boolean;
   hasRecording: boolean;
+  isGeneratingReference: boolean;
+  referenceAudioUrl?: string;
+  referenceError?: string;
   speed: number;
   isLooping: boolean;
   canCompare: boolean;
@@ -25,6 +28,9 @@ export function PracticeWorkspace({
   selectedSentenceId,
   hasReference,
   hasRecording,
+  isGeneratingReference,
+  referenceAudioUrl,
+  referenceError,
   speed,
   isLooping,
   canCompare,
@@ -73,10 +79,17 @@ export function PracticeWorkspace({
           </button>
         ))}
       </div>
-      <WaveformPair hasReference={hasReference} hasRecording={hasRecording} />
+      <WaveformPair
+        hasReference={hasReference}
+        hasRecording={hasRecording}
+        isGeneratingReference={isGeneratingReference}
+        referenceAudioUrl={referenceAudioUrl}
+        referenceError={referenceError}
+      />
       <TransportBar
         speed={speed}
         isLooping={isLooping}
+        isGeneratingReference={isGeneratingReference}
         canCompare={canCompare}
         onSpeedChange={onSpeedChange}
         onPlayReference={onPlayReference}

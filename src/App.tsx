@@ -94,6 +94,9 @@ export default function App({
   const [activeSessionId, setActiveSessionId] = useState<string>();
   const [hasReference, setHasReference] = useState(false);
   const [hasRecording, setHasRecording] = useState(false);
+  const [isGeneratingReference, setIsGeneratingReference] = useState(false);
+  const [referenceAudioUrl, setReferenceAudioUrl] = useState<string>();
+  const [referenceError, setReferenceError] = useState<string>();
   const [referenceDurationMs, setReferenceDurationMs] = useState(0);
   const [recordingDurationMs, setRecordingDurationMs] = useState(0);
   const [analysis, setAnalysis] = useState<AnalysisResult>();
@@ -156,15 +159,32 @@ export default function App({
     if (!selectedSentence) return;
 
     const sentenceId = selectedSentence.id;
-    const generated = await ttsAdapter.generate({
-      sentenceId,
-      text: selectedSentence.text,
-      voice: { ...defaultVoice, speed },
-    });
-    if (selectedSentenceIdRef.current !== sentenceId) return;
+    setIsGeneratingReference(true);
+    setReferenceError(undefined);
 
-    setHasReference(true);
-    setReferenceDurationMs(generated.durationMs);
+    try {
+      const generated = await ttsAdapter.generate({
+        sentenceId,
+        text: selectedSentence.text,
+        voice: { ...defaultVoice, speed },
+      });
+      if (selectedSentenceIdRef.current !== sentenceId) return;
+
+      setHasReference(true);
+      setReferenceAudioUrl(generated.playbackUrl);
+      setReferenceDurationMs(generated.durationMs);
+    } catch (error) {
+      if (selectedSentenceIdRef.current !== sentenceId) return;
+      setReferenceError(
+        error instanceof Error
+          ? error.message
+          : "Could not generate reference audio.",
+      );
+    } finally {
+      if (selectedSentenceIdRef.current === sentenceId) {
+        setIsGeneratingReference(false);
+      }
+    }
   }
 
   async function record() {
@@ -273,6 +293,9 @@ export default function App({
   function clearSentenceLabState() {
     setHasReference(false);
     setHasRecording(false);
+    setIsGeneratingReference(false);
+    setReferenceAudioUrl(undefined);
+    setReferenceError(undefined);
     setReferenceDurationMs(0);
     setRecordingDurationMs(0);
     setAnalysis(undefined);
@@ -367,6 +390,9 @@ export default function App({
                 selectedSentenceId={selectedSentenceId}
                 hasReference={hasReference}
                 hasRecording={hasRecording}
+                isGeneratingReference={isGeneratingReference}
+                referenceAudioUrl={referenceAudioUrl}
+                referenceError={referenceError}
                 speed={speed}
                 isLooping={isLooping}
                 canCompare={hasRecording}

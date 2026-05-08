@@ -8,6 +8,7 @@ export interface GenerateTtsInput {
 
 export interface GeneratedAudio {
   audioPath: string;
+  playbackUrl?: string;
   durationMs: number;
 }
 

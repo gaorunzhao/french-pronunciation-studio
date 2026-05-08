@@ -3,6 +3,7 @@ import { GitCompareArrows, Mic, Play, Repeat2 } from "lucide-react";
 interface TransportBarProps {
   speed: number;
   isLooping: boolean;
+  isGeneratingReference: boolean;
   canCompare: boolean;
   onSpeedChange(speed: number): void;
   onPlayReference(): void;
@@ -14,6 +15,7 @@ interface TransportBarProps {
 export function TransportBar({
   speed,
   isLooping,
+  isGeneratingReference,
   canCompare,
   onSpeedChange,
   onPlayReference,
@@ -23,9 +25,14 @@ export function TransportBar({
 }: TransportBarProps) {
   return (
     <div className="transport-bar">
-      <button className="button primary" type="button" onClick={onPlayReference}>
+      <button
+        className="button primary"
+        type="button"
+        disabled={isGeneratingReference}
+        onClick={onPlayReference}
+      >
         <Play aria-hidden="true" size={17} strokeWidth={2.2} />
-        <span>Play reference</span>
+        <span>{isGeneratingReference ? "Generating reference" : "Play reference"}</span>
       </button>
       <button className="button secondary" type="button" onClick={onRecord}>
         <Mic aria-hidden="true" size={17} strokeWidth={2.2} />

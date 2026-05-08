@@ -3,7 +3,6 @@ import type { GenerateTtsInput, GeneratedAudio, TtsAdapter } from "./types";
 interface HttpTtsAdapterOptions {
   baseUrl: string;
   fetcher?: typeof fetch;
-  playAudio?: (url: string) => Promise<void>;
 }
 
 interface TtsBackendResponse {
@@ -15,16 +14,13 @@ interface TtsBackendResponse {
 export class HttpTtsAdapter implements TtsAdapter {
   private readonly baseUrl: string;
   private readonly fetcher: typeof fetch;
-  private readonly playAudio: (url: string) => Promise<void>;
 
   constructor({
     baseUrl,
-    fetcher = fetch,
-    playAudio = playAudioElement,
+    fetcher,
   }: HttpTtsAdapterOptions) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
-    this.fetcher = fetcher;
-    this.playAudio = playAudio;
+    this.fetcher = fetcher ?? globalThis.fetch.bind(globalThis);
   }
 
   async generate(input: GenerateTtsInput): Promise<GeneratedAudio> {
@@ -51,12 +47,12 @@ export class HttpTtsAdapter implements TtsAdapter {
     }
 
     const payload = (await response.json()) as TtsBackendResponse;
-    if (payload.audioUrl) {
-      await this.playAudio(resolveBackendUrl(this.baseUrl, payload.audioUrl));
-    }
 
     return {
       audioPath: payload.audioPath,
+      playbackUrl: payload.audioUrl
+        ? resolveBackendUrl(this.baseUrl, payload.audioUrl)
+        : undefined,
       durationMs: payload.durationMs,
     };
   }
@@ -64,9 +60,4 @@ export class HttpTtsAdapter implements TtsAdapter {
 
 function resolveBackendUrl(baseUrl: string, pathOrUrl: string) {
   return new URL(pathOrUrl, `${baseUrl}/`).toString();
-}
-
-async function playAudioElement(url: string) {
-  const audio = new Audio(url);
-  await audio.play();
 }
