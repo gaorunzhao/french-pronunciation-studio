@@ -1,3 +1,5 @@
+import { GitCompareArrows, Mic, Play, Repeat2 } from "lucide-react";
+
 interface TransportBarProps {
   speed: number;
   isLooping: boolean;
@@ -22,10 +24,12 @@ export function TransportBar({
   return (
     <div className="transport-bar">
       <button className="button primary" type="button" onClick={onPlayReference}>
-        Play reference
+        <Play aria-hidden="true" size={17} strokeWidth={2.2} />
+        <span>Play reference</span>
       </button>
       <button className="button secondary" type="button" onClick={onRecord}>
-        Record
+        <Mic aria-hidden="true" size={17} strokeWidth={2.2} />
+        <span>Record</span>
       </button>
       <button
         className="button secondary"
@@ -33,7 +37,8 @@ export function TransportBar({
         disabled={!canCompare}
         onClick={onCompare}
       >
-        Compare
+        <GitCompareArrows aria-hidden="true" size={17} strokeWidth={2.2} />
+        <span>Compare</span>
       </button>
       <button
         className={isLooping ? "button primary" : "button secondary"}
@@ -41,7 +46,8 @@ export function TransportBar({
         aria-pressed={isLooping}
         onClick={onToggleLoop}
       >
-        Loop
+        <Repeat2 aria-hidden="true" size={17} strokeWidth={2.2} />
+        <span>Loop</span>
       </button>
       <label className="speed-control">
         <span>Speed {speed.toFixed(2)}x</span>

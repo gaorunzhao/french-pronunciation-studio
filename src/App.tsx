@@ -1,4 +1,10 @@
 import { useMemo, useRef, useState } from "react";
+import {
+  BookOpenText,
+  History,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
 import { FeedbackPanel } from "./components/FeedbackPanel";
 import { PracticeWorkspace } from "./components/PracticeWorkspace";
 import { SessionList } from "./components/SessionList";
@@ -58,6 +64,7 @@ export default function App({
     () => providedRepository ?? new InMemoryRepository(),
   );
   const [screen, setScreen] = useState<Screen>("texts");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [texts, setTexts] = useState<TextDocument[]>([]);
   const [sentences, setSentences] = useState<PracticeSentence[]>([]);
   const [sessions, setSessions] = useState<PracticeSession[]>([]);
@@ -221,30 +228,59 @@ export default function App({
   }
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar" aria-label="App sidebar">
-        <h1 className="app-title">French Pronunciation Studio</h1>
+    <main
+      className={
+        isSidebarCollapsed ? "app-shell sidebar-collapsed" : "app-shell"
+      }
+    >
+      <aside
+        className="sidebar"
+        aria-label="App sidebar"
+        data-collapsed={isSidebarCollapsed}
+      >
+        <div className="sidebar-header">
+          <h1 className="app-title">French Pronunciation Studio</h1>
+          <button
+            className="icon-button sidebar-toggle"
+            type="button"
+            aria-label={
+              isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+            }
+            aria-expanded={!isSidebarCollapsed}
+            onClick={() => setIsSidebarCollapsed((current) => !current)}
+          >
+            {isSidebarCollapsed ? (
+              <PanelLeftOpen aria-hidden="true" size={18} strokeWidth={2.1} />
+            ) : (
+              <PanelLeftClose aria-hidden="true" size={18} strokeWidth={2.1} />
+            )}
+          </button>
+        </div>
         <nav className="nav-stack" aria-label="Main navigation">
           <button
             className={screen === "texts" ? "nav-button active" : "nav-button"}
             type="button"
+            aria-label="Texts"
             aria-current={screen === "texts" ? "page" : undefined}
             onClick={() => setScreen("texts")}
           >
-            Texts
+            <BookOpenText aria-hidden="true" size={18} strokeWidth={2.1} />
+            <span className="nav-label">Texts</span>
           </button>
           <button
             className={
               screen === "sessions" ? "nav-button active" : "nav-button"
             }
             type="button"
+            aria-label="Sessions"
             aria-current={screen === "sessions" ? "page" : undefined}
             onClick={() => setScreen("sessions")}
           >
-            Sessions
+            <History aria-hidden="true" size={18} strokeWidth={2.1} />
+            <span className="nav-label">Sessions</span>
           </button>
         </nav>
-        {screen === "texts" ? (
+        {screen === "texts" && !isSidebarCollapsed ? (
           <TextImport
             onCreate={async (input) => {
               const created = await repository.createText(input);

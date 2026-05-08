@@ -50,8 +50,11 @@ export function PracticeWorkspace({
         <div>
           <p className="eyebrow">Practice Text</p>
           <h2>{text.title}</h2>
+          <p className="workspace-subtitle">
+            Select one sentence, listen once, record, then compare.
+          </p>
         </div>
-        <p className="mode-indicator">Mode: Lab</p>
+        <p className="mode-indicator">Local Lab</p>
       </div>
       <div className="sentence-list">
         {sentences.map((sentence) => (
