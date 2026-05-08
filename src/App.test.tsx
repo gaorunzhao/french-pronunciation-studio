@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 
@@ -66,5 +66,32 @@ describe("App", () => {
     expect(
       screen.getByRole("button", { name: "Collapse sidebar" }),
     ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps import controls in the workspace instead of the sidebar", () => {
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", {
+      name: "App sidebar",
+    });
+    const workspace = screen.getByRole("region", {
+      name: "Practice workspace",
+    });
+
+    expect(
+      within(sidebar).queryByRole("textbox", { name: "Text title" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(sidebar).queryByRole("textbox", { name: "French text" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(workspace).getByRole("textbox", { name: "Text title" }),
+    ).toBeInTheDocument();
+    expect(
+      within(workspace).getByRole("textbox", { name: "French text" }),
+    ).toBeInTheDocument();
+    expect(
+      within(workspace).getByRole("button", { name: "Create practice text" }),
+    ).toBeInTheDocument();
   });
 });

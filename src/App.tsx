@@ -280,43 +280,45 @@ export default function App({
             <span className="nav-label">Sessions</span>
           </button>
         </nav>
-        {screen === "texts" && !isSidebarCollapsed ? (
-          <TextImport
-            onCreate={async (input) => {
-              const created = await repository.createText(input);
-              setTexts(await repository.listTexts());
-              setSentences(created.sentences);
-              setSelectedTextId(created.text.id);
-              selectedTextIdRef.current = created.text.id;
-              selectedSentenceIdRef.current = created.sentences[0]?.id;
-              setSelectedSentenceId(created.sentences[0]?.id);
-              activeSessionIdRef.current = undefined;
-              sessionCreationRef.current = undefined;
-              setActiveSessionId(undefined);
-              clearSentenceLabState();
-              setSpeed(0.9);
-            }}
-          />
-        ) : null}
       </aside>
       <section className="workspace" aria-label="Practice workspace">
         {screen === "texts" ? (
-          <PracticeWorkspace
-            text={selectedText}
-            sentences={sentences}
-            selectedSentenceId={selectedSentenceId}
-            hasReference={hasReference}
-            hasRecording={hasRecording}
-            speed={speed}
-            isLooping={isLooping}
-            canCompare={hasRecording}
-            onSpeedChange={setSpeed}
-            onSelectSentence={selectSentence}
-            onPlayReference={playReference}
-            onRecord={record}
-            onCompare={compare}
-            onToggleLoop={() => setIsLooping((current) => !current)}
-          />
+          <div className="text-workspace-stack">
+            <TextImport
+              onCreate={async (input) => {
+                const created = await repository.createText(input);
+                setTexts(await repository.listTexts());
+                setSentences(created.sentences);
+                setSelectedTextId(created.text.id);
+                selectedTextIdRef.current = created.text.id;
+                selectedSentenceIdRef.current = created.sentences[0]?.id;
+                setSelectedSentenceId(created.sentences[0]?.id);
+                activeSessionIdRef.current = undefined;
+                sessionCreationRef.current = undefined;
+                setActiveSessionId(undefined);
+                clearSentenceLabState();
+                setSpeed(0.9);
+              }}
+            />
+            {selectedText ? (
+              <PracticeWorkspace
+                text={selectedText}
+                sentences={sentences}
+                selectedSentenceId={selectedSentenceId}
+                hasReference={hasReference}
+                hasRecording={hasRecording}
+                speed={speed}
+                isLooping={isLooping}
+                canCompare={hasRecording}
+                onSpeedChange={setSpeed}
+                onSelectSentence={selectSentence}
+                onPlayReference={playReference}
+                onRecord={record}
+                onCompare={compare}
+                onToggleLoop={() => setIsLooping((current) => !current)}
+              />
+            ) : null}
+          </div>
         ) : (
           <SessionList sessions={sessions} texts={texts} />
         )}

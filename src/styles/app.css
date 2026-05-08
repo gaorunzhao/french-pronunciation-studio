@@ -84,6 +84,13 @@ button:disabled {
   background: var(--color-surface-warm);
 }
 
+.text-workspace-stack {
+  min-height: calc(100vh - 44px);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
 .feedback-panel {
   display: flex;
   flex-direction: column;
@@ -191,50 +198,89 @@ button:disabled {
 
 .text-import {
   display: grid;
-  gap: 10px;
-  margin-top: 2px;
-  padding-top: 2px;
+  grid-template-columns: minmax(180px, 0.34fr) minmax(320px, 1fr);
+  gap: 12px;
+  align-items: end;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  padding: 16px;
+  box-shadow: 0 1px 0 rgba(80, 70, 55, 0.04);
+}
+
+.text-import-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.text-import-header h2 {
+  margin: 4px 0 0;
+  font-size: 22px;
+  line-height: 1.16;
+}
+
+.composer-note {
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-amber-soft);
+  color: #734c24;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 720;
+  white-space: nowrap;
 }
 
 .text-import label {
   display: grid;
   gap: 6px;
-  color: var(--color-muted-inverse);
+  color: var(--color-muted);
   font-size: 13px;
   font-weight: 650;
+}
+
+.text-import-body {
+  grid-column: 1 / -1;
 }
 
 .text-import input,
 .text-import textarea {
   width: 100%;
-  border: 1px solid rgba(248, 240, 227, 0.14);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-sidebar-soft);
-  color: var(--color-text-inverse);
-  padding: 10px;
+  background: #fffdf7;
+  color: var(--color-text);
+  padding: 11px 12px;
   outline: none;
 }
 
 .text-import input:focus,
 .text-import textarea:focus {
-  border-color: rgba(231, 212, 180, 0.75);
-  box-shadow: 0 0 0 3px rgba(231, 212, 180, 0.16);
+  border-color: rgba(95, 143, 134, 0.7);
+  box-shadow: 0 0 0 3px rgba(95, 143, 134, 0.14);
 }
 
 .text-import textarea {
-  min-height: 128px;
+  min-height: clamp(180px, 28vh, 340px);
   resize: vertical;
 }
 
+.text-import-submit {
+  justify-self: end;
+}
+
 .form-error {
+  grid-column: 1 / -1;
   margin: 0;
-  color: #ffd3bd;
+  color: #9d3d2f;
   font-size: 13px;
   font-weight: 650;
 }
 
 .practice-layout {
-  min-height: calc(100vh - 44px);
   display: flex;
   flex-direction: column;
   gap: 16px;
