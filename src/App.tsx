@@ -23,22 +23,34 @@ import {
   MockAsrAdapter,
   MockTtsAdapter,
 } from "./modelAdapters/mockAdapters";
+import { HttpTtsAdapter } from "./modelAdapters/httpTtsAdapter";
 import type {
   AnalyzerAdapter,
   AsrAdapter,
   TtsAdapter,
 } from "./modelAdapters/types";
 
-const defaultTtsAdapter = new MockTtsAdapter();
+const defaultTtsAdapter = createDefaultTtsAdapter();
 const defaultAsrAdapter = new MockAsrAdapter();
 const defaultAnalyzerAdapter = new MockAnalyzerAdapter();
 
 const defaultVoice: VoiceSettings = {
-  engine: "mock",
+  engine: configuredTtsBackendUrl() ? "chatterbox" : "mock",
   voiceId: "camille",
   speed: 0.9,
   styleStrength: 0.6,
 };
+
+function configuredTtsBackendUrl() {
+  return import.meta.env.VITE_TTS_BACKEND_URL?.trim();
+}
+
+function createDefaultTtsAdapter() {
+  const backendUrl = configuredTtsBackendUrl();
+  return backendUrl
+    ? new HttpTtsAdapter({ baseUrl: backendUrl })
+    : new MockTtsAdapter();
+}
 
 interface AppProps {
   repository?: StudioRepository;
@@ -325,7 +337,11 @@ export default function App({
       </section>
       <FeedbackPanel
         analysis={analysis}
-        modelStatus="TTS and ASR are mocked locally in Phase 1."
+        modelStatus={
+          configuredTtsBackendUrl()
+            ? "Chatterbox TTS is connected through the local backend."
+            : "TTS and ASR are mocked locally in Phase 1."
+        }
       />
     </main>
   );

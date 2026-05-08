@@ -30,6 +30,22 @@ macOS packaging and real local model validation happen later on the MacBook Air.
 
 The current Tauri config keeps `csp: null` and an empty icon list as Phase 1 scaffolding choices. Tighten the CSP and add production icons before production or macOS packaging.
 
+## Local Chatterbox TTS Backend
+
+For RTX 5070 / Blackwell WSL testing, start the backend with the CUDA 12.8 Torch override:
+
+```bash
+npm run tts:server
+```
+
+Then start the frontend with the backend URL:
+
+```bash
+VITE_TTS_BACKEND_URL=http://127.0.0.1:8765 npm run dev
+```
+
+The frontend calls `POST /tts` when `Play reference` is clicked and plays the returned WAV from `GET /audio/<file>`. Without `VITE_TTS_BACKEND_URL`, the app keeps using the mock TTS adapter.
+
 ## Model Direction
 
 - Quality TTS target: Chatterbox Multilingual.
