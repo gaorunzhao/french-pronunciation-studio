@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpenText,
   History,
@@ -39,6 +39,15 @@ const defaultVoice: VoiceSettings = {
   voiceId: "camille",
   speed: 0.9,
   styleStrength: 0.6,
+};
+
+const seedPracticeText = {
+  title: "Rendez-vous a la mairie",
+  body:
+    "Demain matin, je dois appeler la mairie pour deplacer mon rendez-vous. " +
+    "La personne a l'accueil me demandera probablement mon nom, mon numero de dossier et la raison de ma visite. " +
+    "Si aucun creneau n'est disponible cette semaine, je proposerai de venir tot le lundi suivant. " +
+    "Avant de raccrocher, je repeterai l'heure et l'adresse afin d'eviter toute confusion.",
 };
 
 function configuredTtsBackendUrl() {
@@ -94,6 +103,7 @@ export default function App({
   const selectedTextIdRef = useRef<string | undefined>(undefined);
   const activeSessionIdRef = useRef<string | undefined>(undefined);
   const sessionCreationRef = useRef<SessionCreation | undefined>(undefined);
+  const hasInitializedRef = useRef(false);
 
   const selectedText = useMemo(
     () => texts.find((text) => text.id === selectedTextId),
@@ -103,6 +113,44 @@ export default function App({
     () => sentences.find((sentence) => sentence.id === selectedSentenceId),
     [selectedSentenceId, sentences],
   );
+
+  useEffect(() => {
+    if (hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+
+    let isMounted = true;
+
+    async function initializeTexts() {
+      let availableTexts = await repository.listTexts();
+      let initialSentences: PracticeSentence[] = [];
+
+      if (availableTexts.length === 0 && !providedRepository) {
+        const created = await repository.createText(seedPracticeText);
+        availableTexts = await repository.listTexts();
+        initialSentences = created.sentences;
+      } else if (availableTexts[0]) {
+        initialSentences = await repository.listSentences(availableTexts[0].id);
+      }
+
+      if (!isMounted) return;
+
+      const firstText = availableTexts[0];
+      const firstSentence = initialSentences[0];
+
+      setTexts(availableTexts);
+      setSentences(initialSentences);
+      setSelectedTextId(firstText?.id);
+      setSelectedSentenceId(firstSentence?.id);
+      selectedTextIdRef.current = firstText?.id;
+      selectedSentenceIdRef.current = firstSentence?.id;
+    }
+
+    void initializeTexts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [providedRepository, repository]);
 
   async function playReference() {
     if (!selectedSentence) return;

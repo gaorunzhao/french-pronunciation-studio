@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import App from "./App";
 
 describe("App", () => {
-  it("renders the simple Texts and Sessions navigation", () => {
+  it("renders the simple Texts and Sessions navigation", async () => {
     render(<App />);
 
     expect(screen.getByRole("main")).toBeInTheDocument();
@@ -30,6 +30,22 @@ describe("App", () => {
     expect(
       screen.getByRole("complementary", { name: "Feedback" })
     ).toBeInTheDocument();
+    expect(
+      await screen.findByText("Rendez-vous a la mairie"),
+    ).toBeInTheDocument();
+  });
+
+  it("opens with a seeded practical French passage for first-time practice", async () => {
+    render(<App />);
+
+    expect(
+      await screen.findByText("Rendez-vous a la mairie"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: /Demain matin, je dois appeler la mairie/,
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("collapses the sidebar while keeping navigation accessible", async () => {
@@ -68,7 +84,7 @@ describe("App", () => {
     ).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("keeps import controls in the workspace instead of the sidebar", () => {
+  it("keeps import controls in the workspace instead of the sidebar", async () => {
     render(<App />);
 
     const sidebar = screen.getByRole("complementary", {
@@ -92,6 +108,9 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(
       within(workspace).getByRole("button", { name: "Create practice text" }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("Rendez-vous a la mairie"),
     ).toBeInTheDocument();
   });
 });
