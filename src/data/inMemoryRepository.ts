@@ -2,11 +2,25 @@ import { chunkFrenchText } from "../domain/sentenceChunker";
 import type { AnalysisResult, Attempt, PracticeSentence, PracticeSession, TextDocument } from "../domain/types";
 import type { AddAttemptInput, CreateTextInput, CreateTextResult, StudioRepository } from "./repository";
 
+export interface InitialRepositoryState {
+  texts?: TextDocument[];
+  sentences?: PracticeSentence[];
+  sessions?: PracticeSession[];
+  attempts?: Attempt[];
+}
+
 export class InMemoryRepository implements StudioRepository {
   private texts: TextDocument[] = [];
   private sentences: PracticeSentence[] = [];
   private sessions: PracticeSession[] = [];
   private attempts: Attempt[] = [];
+
+  constructor(initialState: InitialRepositoryState = {}) {
+    this.texts = initialState.texts?.map(cloneTextDocument) ?? [];
+    this.sentences = initialState.sentences?.map(clonePracticeSentence) ?? [];
+    this.sessions = initialState.sessions?.map(clonePracticeSession) ?? [];
+    this.attempts = initialState.attempts?.map(cloneAttempt) ?? [];
+  }
 
   async createText(input: CreateTextInput): Promise<CreateTextResult> {
     const textId = createId("text");

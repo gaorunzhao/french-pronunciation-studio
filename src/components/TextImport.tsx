@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Sparkles } from "lucide-react";
 
 interface TextImportProps {
   onCreate(input: { title: string; body: string }): Promise<void> | void;
@@ -10,14 +9,16 @@ export function TextImport({ onCreate }: TextImportProps) {
   const [body, setBody] = useState("");
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState("");
+  const sentenceCount = countSentences(body);
+  const canSubmit = Boolean(body.trim()) && !isPending;
 
   return (
     <form
       className="text-import"
-      aria-label="Import French text"
+      aria-label="New passage"
       onSubmit={async (event) => {
         event.preventDefault();
-        if (!title.trim() || !body.trim()) return;
+        if (!body.trim()) return;
         setIsPending(true);
         setError("");
         try {
@@ -25,50 +26,64 @@ export function TextImport({ onCreate }: TextImportProps) {
           setTitle("");
           setBody("");
         } catch {
-          setError("Could not create text.");
+          setError("Could not create passage.");
         } finally {
           setIsPending(false);
         }
       }}
     >
-      <div className="text-import-header">
-        <div>
-          <p className="eyebrow">New Practice Text</p>
-          <h2>Paste French. Practice sentence by sentence.</h2>
-        </div>
-        <p className="composer-note">B2-ready local pronunciation lab</p>
-      </div>
-      <label className="text-import-title">
-        <span>Text title</span>
-        <input
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          aria-label="Text title"
-          disabled={isPending}
-        />
-      </label>
-      <label className="text-import-body">
-        <span>French text</span>
-        <textarea
-          value={body}
-          onChange={(event) => setBody(event.target.value)}
-          aria-label="French text"
-          disabled={isPending}
-        />
-      </label>
-      {error ? (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <button
-        className="button primary text-import-submit"
-        type="submit"
-        disabled={isPending}
+      <div
+        className="text-import-composer"
+        role="group"
+        aria-label="Passage composer"
       >
-        <Sparkles aria-hidden="true" size={17} strokeWidth={2.2} />
-        <span>Create practice text</span>
-      </button>
+        <label className="text-import-title">
+          <span>Title</span>
+          <input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            aria-label="Title"
+            placeholder="Optional"
+            disabled={isPending}
+          />
+        </label>
+        <label className="text-import-body">
+          <span>Content</span>
+          <textarea
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            aria-label="Content"
+            placeholder="Paste a French article, dialogue, or lesson text..."
+            disabled={isPending}
+          />
+        </label>
+      </div>
+      <div className="text-import-footer">
+        <span className="text-import-count" aria-live="polite">
+          {sentenceCount} {sentenceCount === 1 ? "line" : "lines"}
+        </span>
+        {error ? (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <button
+          className="button primary text-import-submit"
+          type="submit"
+          disabled={!canSubmit}
+        >
+          <span>{isPending ? "Starting practice" : "Start practice"}</span>
+        </button>
+      </div>
     </form>
   );
+}
+
+function countSentences(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return 0;
+  return trimmed
+    .split(/(?<=[.!?…])\s+|\n+/u)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean).length;
 }

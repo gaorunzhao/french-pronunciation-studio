@@ -1,70 +1,44 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
-import type { AnalyzeInput, GenerateTtsInput } from "../modelAdapters/types";
+import type { GenerateTtsInput } from "../modelAdapters/types";
 
-describe("Lab flow", () => {
-  it("shows neutral feedback before compare", async () => {
+describe("Reference playback flow", () => {
+  it("passes expression strength and speed to the TTS adapter", async () => {
     const user = userEvent.setup();
-    render(<App />);
+    const ttsAdapter = {
+      generate: vi.fn(async (_input: GenerateTtsInput) => ({
+        audioPath: "mock://tts/reference.wav",
+        durationMs: 1200,
+      })),
+    };
 
-    expect(
-      screen.getByText("Record and compare to see feedback."),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Record and compare to see feedback.",
-    );
-    expect(screen.queryByText("No repeat needed.")).not.toBeInTheDocument();
-
-    await user.type(screen.getByLabelText("Text title"), "Cafe dialogue");
-    await user.type(screen.getByLabelText("French text"), "Bonjour.");
-    await user.click(
-      screen.getByRole("button", { name: "Create practice text" }),
-    );
-
-    expect(
-      screen.getByText("Record and compare to see feedback."),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("No repeat needed.")).not.toBeInTheDocument();
-  });
-
-  it("generates mock reference audio, records, compares, and shows feedback", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.type(screen.getByLabelText("Text title"), "Cafe dialogue");
-    await user.type(screen.getByLabelText("French text"), "Bonjour.");
-    await user.click(
-      screen.getByRole("button", { name: "Create practice text" }),
+    render(
+      <App
+        {...({
+          ttsAdapter,
+        } as Parameters<typeof App>[0])}
+      />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Play reference" }));
-    await user.click(screen.getByRole("button", { name: "Record" }));
-    await user.click(screen.getByRole("button", { name: "Compare" }));
+    await screen.findByRole("heading", {
+      level: 2,
+      name: "Le train vers le Grand Lac Salé",
+    });
+    await user.selectOptions(screen.getByLabelText("Expression"), "expressive");
+    await user.click(screen.getByRole("button", { name: "Show waveform" }));
+    const speedButton = screen.getByRole("button", { name: "Playback speed" });
+    expect(speedButton).toHaveTextContent("1.0x");
+    await user.click(speedButton);
+    await user.click(screen.getByRole("menuitemradio", { name: "1.5x" }));
+    await user.click(screen.getByRole("button", { name: "Listen" }));
 
-    expect(screen.getByText("Reference Audio")).toBeInTheDocument();
-    expect(screen.getByText("Your Recording")).toBeInTheDocument();
-    expect(screen.getByText("No repeat needed.")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("No repeat needed.");
-  });
-
-  it("disables compare until a recording exists", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.type(screen.getByLabelText("Text title"), "Cafe dialogue");
-    await user.type(screen.getByLabelText("French text"), "Bonjour.");
-    await user.click(
-      screen.getByRole("button", { name: "Create practice text" }),
-    );
-
-    const compareButton = screen.getByRole("button", { name: "Compare" });
-
-    expect(compareButton).toBeDisabled();
-
-    await user.click(screen.getByRole("button", { name: "Record" }));
-
-    expect(compareButton).not.toBeDisabled();
+    await waitFor(() => expect(ttsAdapter.generate).toHaveBeenCalledTimes(1));
+    expect(ttsAdapter.generate.mock.calls[0][0].voice).toMatchObject({
+      voiceId: "default",
+      styleStrength: 0.82,
+      speed: 1.5,
+    });
   });
 
   it("ignores stale reference generation after selecting another sentence", async () => {
@@ -73,10 +47,16 @@ describe("Lab flow", () => {
     const slowTtsAdapter = {
       generate: vi.fn(
         (_input: GenerateTtsInput) =>
-          new Promise<{ audioPath: string; durationMs: number }>((resolve) => {
-            resolveReference = () =>
-              resolve({ audioPath: "mock://tts/slow.wav", durationMs: 1000 });
-          }),
+          new Promise<{ audioPath: string; playbackUrl: string; durationMs: number }>(
+            (resolve) => {
+              resolveReference = () =>
+                resolve({
+                  audioPath: "mock://tts/slow.wav",
+                  playbackUrl: "http://127.0.0.1:8765/audio/slow.wav",
+                  durationMs: 1000,
+                });
+            },
+          ),
       ),
     };
 
@@ -88,13 +68,12 @@ describe("Lab flow", () => {
       />,
     );
 
-    await user.type(screen.getByLabelText("Text title"), "Cafe dialogue");
-    await user.type(screen.getByLabelText("French text"), "Bonjour. Bonsoir.");
-    await user.click(
-      screen.getByRole("button", { name: "Create practice text" }),
-    );
+    await user.click(await screen.findByRole("button", { name: "New passage" }));
+    await user.type(screen.getByLabelText("Title"), "Cafe dialogue");
+    await user.type(screen.getByLabelText("Content"), "Bonjour. Bonsoir.");
+    await user.click(screen.getByRole("button", { name: "Start practice" }));
 
-    await user.click(screen.getByRole("button", { name: "Play reference" }));
+    await user.click(screen.getByRole("button", { name: "Listen" }));
 
     expect(slowTtsAdapter.generate).toHaveBeenCalledTimes(1);
 
@@ -104,188 +83,57 @@ describe("Lab flow", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("img", { name: "Reference audio not generated" }),
-      ).toBeInTheDocument(),
+        screen.getByLabelText("Reference progress"),
+      ).toBeDisabled(),
     );
-    expect(
-      screen.queryByRole("img", { name: "Reference audio ready" }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText("Waveform")).toBeInTheDocument();
   });
 
-  it("ignores stale comparison results after selecting another sentence", async () => {
+  it("clears audio state when selecting a different sentence", async () => {
     const user = userEvent.setup();
-    let resolveAnalysis: (() => void) | undefined;
-    const asrAdapter = {
-      transcribe: vi.fn(async () => ({ text: "Bonjour", durationMs: 1000 })),
-    };
-    const analyzerAdapter = {
-      analyze: vi.fn(
-        (_input: AnalyzeInput) =>
-          new Promise<{
-            words: [{ expected: string; status: "match" }];
-            mismatchCount: number;
-            timingStatus: "similar";
-            needsRepeat: boolean;
-          }>((resolve) => {
-            resolveAnalysis = () =>
-              resolve({
-                words: [{ expected: "Bonjour", status: "match" }],
-                mismatchCount: 0,
-                timingStatus: "similar",
-                needsRepeat: false,
-              });
-          }),
-      ),
+    const ttsAdapter = {
+      generate: vi.fn(async () => ({
+        audioPath: "mock://tts/reference.wav",
+        playbackUrl: "http://127.0.0.1:8765/audio/reference.wav",
+        durationMs: 1000,
+      })),
     };
 
     render(
       <App
         {...({
-          asrAdapter,
-          analyzerAdapter,
+          ttsAdapter,
         } as Parameters<typeof App>[0])}
       />,
     );
 
-    await user.type(screen.getByLabelText("Text title"), "Cafe dialogue");
-    await user.type(screen.getByLabelText("French text"), "Bonjour. Bonsoir.");
-    await user.click(
-      screen.getByRole("button", { name: "Create practice text" }),
-    );
+    await user.click(await screen.findByRole("button", { name: "New passage" }));
+    await user.type(screen.getByLabelText("Title"), "Cafe dialogue");
+    await user.type(screen.getByLabelText("Content"), "Bonjour. Bonsoir.");
+    await user.click(screen.getByRole("button", { name: "Start practice" }));
 
-    await user.click(screen.getByRole("button", { name: "Record" }));
-    await user.click(screen.getByRole("button", { name: "Compare" }));
-
-    expect(asrAdapter.transcribe).toHaveBeenCalledTimes(1);
-    expect(analyzerAdapter.analyze).toHaveBeenCalledTimes(1);
-
-    await user.click(screen.getByRole("button", { name: "Bonsoir." }));
-
-    resolveAnalysis?.();
+    await user.click(screen.getByRole("button", { name: "Listen" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "Record and compare to see feedback.",
-      ),
+      expect(screen.getByLabelText("Reference progress")).toBeEnabled(),
     );
-    expect(screen.queryByText("No repeat needed.")).not.toBeInTheDocument();
-  });
-
-  it("clears feedback and waveform state when selecting a different sentence", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.type(screen.getByLabelText("Text title"), "Cafe dialogue");
-    await user.type(screen.getByLabelText("French text"), "Bonjour. Bonsoir.");
-    await user.click(
-      screen.getByRole("button", { name: "Create practice text" }),
-    );
-
-    await user.click(screen.getByRole("button", { name: "Play reference" }));
-    await user.click(screen.getByRole("button", { name: "Record" }));
-    await user.click(screen.getByRole("button", { name: "Compare" }));
-
-    expect(screen.getByText("No repeat needed.")).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: "Reference audio ready" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: "Your recording ready" }),
-    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Bonsoir." }));
 
-    expect(
-      screen.getByText("Record and compare to see feedback."),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("No repeat needed.")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: "Reference audio not generated" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: "Your recording not captured" }),
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Reference progress")).toBeDisabled();
+    expect(screen.getByText("Waveform")).toBeInTheDocument();
   });
 
-  it("updates waveform accessible labels after play reference and record", async () => {
-    const user = userEvent.setup();
+  it("does not show a loop control in the transport bar", async () => {
     render(<App />);
 
-    await user.type(screen.getByLabelText("Text title"), "Cafe dialogue");
-    await user.type(screen.getByLabelText("French text"), "Bonjour.");
-    await user.click(
-      screen.getByRole("button", { name: "Create practice text" }),
-    );
+    await screen.findByRole("heading", {
+      level: 2,
+      name: "Le train vers le Grand Lac Salé",
+    });
 
-    expect(
-      screen.getByRole("img", { name: "Reference audio not generated" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: "Your recording not captured" }),
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Play reference" }));
-
-    expect(
-      screen.getByRole("img", { name: "Reference audio ready" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: "Your recording not captured" }),
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Record" }));
-
-    expect(
-      screen.getByRole("img", { name: "Reference audio ready" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("img", { name: "Your recording ready" }),
-    ).toBeInTheDocument();
-  });
-
-  it("toggles loop state from the transport bar", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.type(screen.getByLabelText("Text title"), "Cafe dialogue");
-    await user.type(screen.getByLabelText("French text"), "Bonjour.");
-    await user.click(
-      screen.getByRole("button", { name: "Create practice text" }),
-    );
-
-    const loopButton = screen.getByRole("button", { name: "Loop" });
-
-    expect(loopButton).toHaveAttribute("aria-pressed", "false");
-
-    await user.click(loopButton);
-
-    expect(loopButton).toHaveAttribute("aria-pressed", "true");
-
-    await user.click(loopButton);
-
-    expect(loopButton).toHaveAttribute("aria-pressed", "false");
-  });
-
-  it("resets speed when importing a new text", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    await user.type(screen.getByLabelText("Text title"), "Cafe dialogue");
-    await user.type(screen.getByLabelText("French text"), "Bonjour.");
-    await user.click(
-      screen.getByRole("button", { name: "Create practice text" }),
-    );
-
-    fireEvent.change(screen.getByRole("slider"), { target: { value: "1.15" } });
-
-    expect(screen.getByText("Speed 1.15x")).toBeInTheDocument();
-
-    await user.type(screen.getByLabelText("Text title"), "Market dialogue");
-    await user.type(screen.getByLabelText("French text"), "Bonsoir.");
-    await user.click(
-      screen.getByRole("button", { name: "Create practice text" }),
-    );
-
-    expect(screen.getByText("Speed 0.90x")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Listen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Record" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Loop" })).not.toBeInTheDocument();
   });
 });

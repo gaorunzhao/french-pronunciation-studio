@@ -3,47 +3,63 @@ import userEvent from "@testing-library/user-event";
 import App from "./App";
 
 describe("App", () => {
-  it("renders the simple Texts and Sessions navigation", async () => {
+  it("renders New passage navigation and passages in the sidebar", async () => {
     render(<App />);
+
+    const importButton = screen.getByRole("button", { name: "New passage" });
+    const sidebar = screen.getByRole("complementary", {
+      name: "App sidebar",
+    });
 
     expect(screen.getByRole("main")).toBeInTheDocument();
     expect(
-      screen.getByRole("navigation", { name: "Main navigation" })
+      screen.getByRole("navigation", { name: "Main navigation" }),
     ).toBeInTheDocument();
-
-    const textsButton = screen.getByRole("button", { name: "Texts" });
-    const sessionsButton = screen.getByRole("button", { name: "Sessions" });
-
-    expect(textsButton).toBeInTheDocument();
-    expect(textsButton).toHaveAttribute("aria-current", "page");
-    expect(textsButton).not.toHaveAttribute("aria-pressed");
-    expect(sessionsButton).toBeInTheDocument();
-    expect(sessionsButton).not.toHaveAttribute("aria-pressed");
-    expect(sessionsButton).not.toHaveAttribute("aria-current");
-    expect(screen.getByText("French Pronunciation Studio")).toBeInTheDocument();
+    expect(importButton).toBeInTheDocument();
+    expect(importButton).not.toHaveAttribute("aria-current");
+    expect(screen.getByText("Voix Claire")).toBeInTheDocument();
+    expect(sidebar).toBeInTheDocument();
     expect(
-      screen.getByRole("complementary", { name: "App sidebar" })
+      within(sidebar).getByRole("region", { name: "Passages" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("region", { name: "Practice workspace" })
+      screen.getByRole("region", { name: "Practice workspace" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("complementary", { name: "Feedback" })
-    ).toBeInTheDocument();
+      screen.queryByRole("complementary", { name: "Feedback" }),
+    ).not.toBeInTheDocument();
     expect(
-      await screen.findByText("Rendez-vous a la mairie"),
+      screen.getByRole("heading", {
+        level: 2,
+        name: "Le train vers le Grand Lac Salé",
+      }),
     ).toBeInTheDocument();
   });
 
-  it("opens with a seeded practical French passage for first-time practice", async () => {
+  it("opens on New passage while keeping the default long French session available", async () => {
+    const user = userEvent.setup();
     render(<App />);
 
+    expect(screen.queryByText("No passages yet.")).not.toBeInTheDocument();
     expect(
-      await screen.findByText("Rendez-vous a la mairie"),
+      within(
+        screen.getByRole("region", { name: "Practice workspace" }),
+      ).queryByRole("region", { name: "Passages" }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", {
+        name: "Le train vers le Grand Lac Salé, 17 sentences",
+      }),
+    );
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: "Le train vers le Grand Lac Salé",
+      }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: /Demain matin, je dois appeler la mairie/,
+        name: /Pendant la nuit du 5 au 6 décembre/,
       }),
     ).toHaveAttribute("aria-pressed", "true");
   });
@@ -70,10 +86,10 @@ describe("App", () => {
     expect(sidebar).toHaveAttribute("data-collapsed", "true");
     expect(expandButton).toHaveAttribute("aria-expanded", "false");
 
-    await user.click(screen.getByRole("button", { name: "Sessions" }));
+    await user.click(screen.getByRole("button", { name: "New passage" }));
 
     expect(
-      screen.getByRole("button", { name: "Sessions" }),
+      screen.getByRole("button", { name: "New passage" }),
     ).toHaveAttribute("aria-current", "page");
 
     await user.click(expandButton);
@@ -84,33 +100,56 @@ describe("App", () => {
     ).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("keeps import controls in the workspace instead of the sidebar", async () => {
+  it("keeps New passage as a dedicated creation screen", async () => {
+    const user = userEvent.setup();
     render(<App />);
 
-    const sidebar = screen.getByRole("complementary", {
-      name: "App sidebar",
-    });
+    await user.click(screen.getByRole("button", { name: "New passage" }));
+
     const workspace = screen.getByRole("region", {
       name: "Practice workspace",
     });
+    expect(screen.getByRole("button", { name: "New passage" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(
+      within(workspace).getByRole("textbox", { name: "Title" }),
+    ).toBeInTheDocument();
+    expect(
+      within(workspace).getByRole("textbox", { name: "Content" }),
+    ).toBeInTheDocument();
+    expect(
+      within(workspace).queryByRole("button", {
+        name: /Pendant la nuit du 5 au 6 décembre/,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(workspace).queryByRole("button", { name: "New text" }),
+    ).not.toBeInTheDocument();
+  });
 
+  it("creates a passage from New passage and moves into practice", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "New passage" }));
+    await user.type(screen.getByLabelText("Title"), "Dialogue au cafe");
+    await user.type(
+      screen.getByLabelText("Content"),
+      "Bonjour. Je voudrais un cafe creme.",
+    );
+    await user.click(screen.getByRole("button", { name: "Start practice" }));
+
+    expect(screen.getByRole("button", { name: "New passage" })).not.toHaveAttribute(
+      "aria-current",
+    );
     expect(
-      within(sidebar).queryByRole("textbox", { name: "Text title" }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(sidebar).queryByRole("textbox", { name: "French text" }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(workspace).getByRole("textbox", { name: "Text title" }),
+      screen.getByRole("button", { name: "Dialogue au cafe, 2 sentences" }),
     ).toBeInTheDocument();
-    expect(
-      within(workspace).getByRole("textbox", { name: "French text" }),
-    ).toBeInTheDocument();
-    expect(
-      within(workspace).getByRole("button", { name: "Create practice text" }),
-    ).toBeInTheDocument();
-    expect(
-      await screen.findByText("Rendez-vous a la mairie"),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bonjour." })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 });

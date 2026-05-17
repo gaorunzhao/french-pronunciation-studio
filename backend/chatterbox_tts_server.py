@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+import threading
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -14,6 +15,12 @@ from urllib.parse import unquote
 
 
 DEFAULT_OUTPUT_DIR = Path("/tmp/french-pronunciation-studio/tts")
+DEFAULT_HF_ENDPOINT = "https://huggingface.co"
+VOICE_PROMPT_ENV = {
+    "female-fr": "TTS_FEMALE_PROMPT_PATH",
+    "male-fr": "TTS_MALE_PROMPT_PATH",
+}
+TERMINAL_PUNCTUATION = (".", "!", "?", "-", ",", "、", "，", "。", "？", "！")
 
 
 def build_audio_filename(sentence_id: str, text: str, voice: dict[str, Any]) -> str:
@@ -73,10 +80,31 @@ class ChatterboxEngine:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.device = device
         self._model = None
+        self._model_lock = threading.Lock()
+        self._last_model_error: str | None = None
 
     @property
     def model_loaded(self) -> bool:
         return self._model is not None
+
+    def model_status(self) -> dict[str, Any]:
+        status = "ready" if self.model_loaded else "missing"
+        if self._last_model_error:
+            status = "error"
+        return {
+            "model": "ResembleAI/chatterbox",
+            "status": status,
+            "device": self.device or "auto",
+            "modelLoaded": self.model_loaded,
+            "modelInstalled": self.model_loaded,
+            "hfEndpoint": active_hf_endpoint(),
+            "downloadEndpoint": "/models/chatterbox/download",
+            "error": self._last_model_error,
+        }
+
+    def download_model(self) -> dict[str, Any]:
+        self._load_model()
+        return self.model_status()
 
     def synthesize(
         self,
@@ -87,14 +115,13 @@ class ChatterboxEngine:
         voice: dict[str, Any],
     ) -> dict[str, Any]:
         model = self._load_model()
-        filename = build_audio_filename(sentence_id, text, voice)
+        generation_text = normalize_generation_text(text)
+        filename = build_audio_filename(sentence_id, generation_text, voice)
         output_path = self.output_dir / filename
 
         wav = model.generate(
-            text,
-            language_id=language_id,
-            exaggeration=_clamped_float(voice.get("styleStrength"), 0.5, 0.0, 1.2),
-            cfg_weight=_cfg_for_speed(_clamped_float(voice.get("speed"), 0.9, 0.65, 1.2)),
+            generation_text,
+            **build_chatterbox_generate_kwargs(language_id=language_id, voice=voice),
         )
         audio = wav.squeeze().detach().cpu().numpy()
 
@@ -113,6 +140,20 @@ class ChatterboxEngine:
         if self._model is not None:
             return self._model
 
+        with self._model_lock:
+            if self._model is not None:
+                return self._model
+
+            try:
+                self._model = self._create_model()
+            except Exception as exc:
+                self._last_model_error = str(exc)
+                raise
+
+            self._last_model_error = None
+            return self._model
+
+    def _create_model(self):
         import torch
         from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
@@ -120,8 +161,7 @@ class ChatterboxEngine:
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
-        self._model = ChatterboxMultilingualTTS.from_pretrained(device=device)
-        return self._model
+        return ChatterboxMultilingualTTS.from_pretrained(device=device)
 
 
 def _clamped_float(value: Any, default: float, minimum: float, maximum: float) -> float:
@@ -132,12 +172,55 @@ def _clamped_float(value: Any, default: float, minimum: float, maximum: float) -
     return min(max(parsed, minimum), maximum)
 
 
+def active_hf_endpoint() -> str:
+    return os.environ.get("HF_ENDPOINT", DEFAULT_HF_ENDPOINT).strip() or DEFAULT_HF_ENDPOINT
+
+
+def normalize_generation_text(text: str) -> str:
+    normalized = " ".join(text.split()).strip()
+    if normalized and not normalized.endswith(TERMINAL_PUNCTUATION):
+        return f"{normalized}."
+    return normalized
+
+
+def build_chatterbox_generate_kwargs(language_id: str, voice: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "language_id": language_id,
+        "audio_prompt_path": _audio_prompt_path_for_voice(voice),
+        "exaggeration": _clamped_float(voice.get("styleStrength"), 0.5, 0.0, 1.2),
+        "cfg_weight": _cfg_for_speed(_clamped_float(voice.get("speed"), 0.9, 0.65, 1.2)),
+        "temperature": 0.45,
+        "repetition_penalty": 1.5,
+        "min_p": 0.05,
+        "top_p": 0.85,
+    }
+
+
 def _cfg_for_speed(speed: float) -> float:
     if speed >= 1.05:
         return 0.35
     if speed <= 0.75:
         return 0.65
     return 0.5
+
+
+def _audio_prompt_path_for_voice(voice: dict[str, Any]) -> str | None:
+    voice_id = str(voice.get("voiceId", "default")).strip()
+    if voice_id in ("", "default"):
+        return None
+
+    env_name = VOICE_PROMPT_ENV.get(voice_id)
+    if env_name is None:
+        raise ValueError(f"unknown voice preset: {voice_id}")
+
+    prompt_path = os.environ.get(env_name, "").strip()
+    if not prompt_path:
+        raise ValueError(f"voice preset {voice_id} requires {env_name}")
+
+    if not Path(prompt_path).exists():
+        raise ValueError(f"voice prompt file not found: {prompt_path}")
+
+    return prompt_path
 
 
 class TtsRequestHandler(SimpleHTTPRequestHandler):
@@ -148,14 +231,7 @@ class TtsRequestHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self._send_json(
-                {
-                    "status": "ok",
-                    "model": "ResembleAI/chatterbox",
-                    "device": self.engine.device or "auto",
-                    "modelLoaded": self.engine.model_loaded,
-                }
-            )
+            self._send_json({"backend": "chatterbox", **self.engine.model_status()})
             return
 
         if self.path.startswith("/audio/"):
@@ -165,6 +241,17 @@ class TtsRequestHandler(SimpleHTTPRequestHandler):
         self._send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
     def do_POST(self):
+        if self.path == "/models/chatterbox/download":
+            try:
+                self._send_json({"backend": "chatterbox", **self.engine.download_model()})
+            except Exception as exc:
+                print(f"TTS model download failed: {exc}", file=sys.stderr)
+                self._send_json(
+                    {"backend": "chatterbox", **self.engine.model_status()},
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+            return
+
         if self.path != "/tts":
             self._send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
             return

@@ -20,7 +20,7 @@ export interface PracticeSentence {
 }
 
 export interface VoiceSettings {
-  engine: "mock" | "chatterbox" | "kokoro";
+  engine: "mock" | "chatterbox";
   voiceId: string;
   speed: number;
   styleStrength: number;

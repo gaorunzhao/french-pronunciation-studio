@@ -1,148 +1,157 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "../App";
 import { InMemoryRepository } from "../data/inMemoryRepository";
-import type { AddAttemptInput } from "../data/repository";
-import type { Attempt, PracticeSession } from "../domain/types";
-
-class SlowSessionRepository extends InMemoryRepository {
-  addAttemptCount = 0;
-  createSessionStarts: Promise<void>[] = [];
-  resolveCreateSessions: Array<() => void> = [];
-
-  async createSession(textId: string): Promise<PracticeSession> {
-    this.createSessionStarts.push(Promise.resolve());
-    await new Promise<void>((resolve) => {
-      this.resolveCreateSessions.push(resolve);
-    });
-    return super.createSession(textId);
-  }
-
-  async addAttempt(input: AddAttemptInput): Promise<Attempt> {
-    this.addAttemptCount += 1;
-    return super.addAttempt(input);
-  }
-}
+import type { PracticeSession } from "../domain/types";
 
 class CountingRepository extends InMemoryRepository {
   createSessionCount = 0;
-  addAttemptCount = 0;
 
   async createSession(textId: string): Promise<PracticeSession> {
     this.createSessionCount += 1;
     return super.createSession(textId);
   }
-
-  async addAttempt(input: AddAttemptInput): Promise<Attempt> {
-    this.addAttemptCount += 1;
-    return super.addAttempt(input);
-  }
 }
 
-async function createPracticeText(
+async function createPracticeSession(
   user: ReturnType<typeof userEvent.setup>,
   title: string,
   body: string,
 ) {
-  await user.type(screen.getByLabelText("Text title"), title);
-  await user.type(screen.getByLabelText("French text"), body);
-  await user.click(
-    screen.getByRole("button", { name: "Create practice text" }),
-  );
+  await user.click(screen.getByRole("button", { name: "New passage" }));
+  await user.type(screen.getByLabelText("Title"), title);
+  await user.type(screen.getByLabelText("Content"), body);
+  await user.click(screen.getByRole("button", { name: "Start practice" }));
 }
 
-async function prepareRecording(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: "Play reference" }));
-  await user.click(screen.getByRole("button", { name: "Record" }));
-}
-
-describe("Sessions screen", () => {
-  it("shows a session after a comparison attempt", async () => {
-    const user = userEvent.setup();
+describe("Passages sidebar", () => {
+  it("shows the default session before any attempt exists", async () => {
     render(<App />);
 
-    await createPracticeText(user, "Cafe dialogue", "Bonjour.");
-    await prepareRecording(user);
-    await user.click(screen.getByRole("button", { name: "Compare" }));
-    await user.click(screen.getByRole("button", { name: "Sessions" }));
-
-    expect(screen.getByText("Practice Sessions")).toBeInTheDocument();
-    expect(screen.getByText("Cafe dialogue")).toBeInTheDocument();
-    expect(screen.getByText("1 attempt")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", {
+        name: "Le train vers le Grand Lac Salé, 17 sentences",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("No passages yet.")).not.toBeInTheDocument();
   });
 
-  it("reuses one active session for two compares on the same text", async () => {
+  it("creates one session when a text is imported", async () => {
     const user = userEvent.setup();
     const repository = new CountingRepository();
     render(<App repository={repository} />);
 
-    await createPracticeText(user, "Cafe dialogue", "Bonjour.");
-    await prepareRecording(user);
+    await createPracticeSession(user, "Cafe dialogue", "Bonjour.");
 
-    const compareButton = screen.getByRole("button", { name: "Compare" });
-    await Promise.all([user.click(compareButton), user.click(compareButton)]);
-    await user.click(screen.getByRole("button", { name: "Sessions" }));
-
-    expect(screen.getByText("Cafe dialogue")).toBeInTheDocument();
-    expect(screen.getByText("2 attempts")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Cafe dialogue, 1 sentence" }),
+    ).toBeInTheDocument();
     expect(repository.createSessionCount).toBe(1);
-    expect(repository.addAttemptCount).toBe(2);
     expect(await repository.listSessions()).toHaveLength(1);
   });
 
-  it("does not visibly persist a stale compare when the selected sentence changes", async () => {
-    const user = userEvent.setup();
-    const repository = new SlowSessionRepository();
-    render(<App repository={repository} />);
-
-    await createPracticeText(user, "Cafe dialogue", "Bonjour. Salut.");
-    await prepareRecording(user);
-
-    await user.click(screen.getByRole("button", { name: "Compare" }));
-    await repository.createSessionStarts[0];
-    await user.click(screen.getByRole("button", { name: "Salut." }));
-    repository.resolveCreateSessions[0]?.();
-    await user.click(screen.getByRole("button", { name: "Sessions" }));
-
-    expect(screen.getByText("No sessions yet.")).toBeInTheDocument();
-    expect(repository.addAttemptCount).toBe(0);
-  });
-
-  it("does not let a stale pending session split later attempts", async () => {
-    const user = userEvent.setup();
-    const repository = new SlowSessionRepository();
-    render(<App repository={repository} />);
-
-    await createPracticeText(user, "Cafe dialogue", "Bonjour. Salut.");
-    await prepareRecording(user);
-
-    await user.click(screen.getByRole("button", { name: "Compare" }));
-    await repository.createSessionStarts[0];
-    await user.click(screen.getByRole("button", { name: "Salut." }));
-    await prepareRecording(user);
-    await user.click(screen.getByRole("button", { name: "Compare" }));
-    repository.resolveCreateSessions[0]?.();
-    await user.click(screen.getByRole("button", { name: "Compare" }));
-    await user.click(screen.getByRole("button", { name: "Sessions" }));
-
-    expect(screen.getByText("Cafe dialogue")).toBeInTheDocument();
-    expect(screen.getByText("2 attempts")).toBeInTheDocument();
-    expect(screen.queryByText("1 attempt")).not.toBeInTheDocument();
-    expect(repository.createSessionStarts).toHaveLength(1);
-  });
-
-  it("updates the active navigation state when switching to Sessions", async () => {
+  it("uses a generated passage name when the title is empty", async () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole("button", { name: "Sessions" }));
+    await user.click(screen.getByRole("button", { name: "New passage" }));
+    await user.type(screen.getByLabelText("Content"), "Bonjour.");
+    await user.click(screen.getByRole("button", { name: "Start practice" }));
 
-    expect(screen.getByRole("button", { name: "Sessions" })).toHaveAttribute(
+    expect(
+      screen.getByRole("button", { name: "Passage 2, 1 sentence" }),
+    ).toBeInTheDocument();
+  });
+
+  it("lets the user switch between saved sessions", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await createPracticeSession(user, "Cafe dialogue", "Bonjour.");
+    await createPracticeSession(user, "A la gare", "Le train partira demain.");
+
+    await user.click(screen.getByRole("button", { name: /Cafe dialogue, 1 sentence/ }));
+
+    expect(screen.getByRole("button", { name: "Bonjour." })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.queryByRole("button", { name: "Le train partira demain." })).not.toBeInTheDocument();
+  });
+
+  it("places newly imported passages first", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await createPracticeSession(user, "Cafe dialogue", "Bonjour.");
+
+    const passageButtons = screen.getAllByRole("button", {
+      name: /sentences?|sentence/,
+    });
+
+    expect(passageButtons[0]).toHaveAccessibleName("Cafe dialogue, 1 sentence");
+  });
+
+  it("lets the user drag passages into a custom order", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await createPracticeSession(user, "Cafe dialogue", "Bonjour.");
+    await createPracticeSession(user, "A la gare", "Le train partira demain.");
+
+    const source = screen.getByRole("button", { name: "A la gare, 1 sentence" });
+    const target = screen.getByRole("button", { name: "Le train vers le Grand Lac Salé, 17 sentences" });
+    const dataTransfer = createDataTransfer();
+
+    fireEvent.dragStart(source, { dataTransfer });
+    fireEvent.dragOver(target, { dataTransfer });
+    fireEvent.drop(target, { dataTransfer });
+
+    const passageButtons = screen.getAllByRole("button", {
+      name: /sentences?|sentence/,
+    });
+
+    expect(passageButtons.at(-1)).toHaveAccessibleName("A la gare, 1 sentence");
+  });
+
+  it("uses New passage as the only page navigation state", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "New passage" }));
+
+    expect(screen.getByRole("button", { name: "New passage" })).toHaveAttribute(
       "aria-current",
       "page",
     );
-    expect(screen.getByRole("button", { name: "Texts" })).not.toHaveAttribute(
-      "aria-current",
-    );
+    expect(
+      screen.getByRole("button", {
+        name: "Le train vers le Grand Lac Salé, 17 sentences",
+      }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("button", { name: "Sessions" })).not.toBeInTheDocument();
   });
 });
+
+function createDataTransfer(): DataTransfer {
+  const store = new Map<string, string>();
+  return {
+    dropEffect: "move",
+    effectAllowed: "move",
+    files: [] as unknown as FileList,
+    items: [] as unknown as DataTransferItemList,
+    types: [],
+    clearData: vi.fn((type?: string) => {
+      if (type) {
+        store.delete(type);
+      } else {
+        store.clear();
+      }
+    }),
+    getData: vi.fn((type: string) => store.get(type) ?? ""),
+    setData: vi.fn((type: string, value: string) => {
+      store.set(type, value);
+    }),
+    setDragImage: vi.fn(),
+  };
+}
