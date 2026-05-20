@@ -19,7 +19,7 @@ describe("HttpTtsAdapter", () => {
       sentenceId: "sentence-1",
       text: "Bonjour.",
       voice: {
-        engine: "chatterbox",
+        engine: "kokoro",
         voiceId: "camille",
         speed: 0.9,
         styleStrength: 0.7,
@@ -66,7 +66,7 @@ describe("HttpTtsAdapter", () => {
         sentenceId: "sentence-1",
         text: "Bonjour.",
         voice: {
-          engine: "chatterbox",
+          engine: "kokoro",
           voiceId: "camille",
           speed: 0.9,
           styleStrength: 0.7,
@@ -104,7 +104,7 @@ describe("HttpTtsAdapter", () => {
           sentenceId: "sentence-1",
           text: "Bonjour.",
           voice: {
-            engine: "chatterbox",
+            engine: "kokoro",
             voiceId: "camille",
             speed: 0.9,
             styleStrength: 0.7,

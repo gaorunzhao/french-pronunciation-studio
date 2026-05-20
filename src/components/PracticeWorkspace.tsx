@@ -1,14 +1,10 @@
+import { useEffect, useRef } from "react";
+import * as ScrollArea from "@radix-ui/react-scroll-area";
+import * as ToggleGroup from "@radix-ui/react-toggle-group";
 import type { PracticeSentence, TextDocument } from "../domain/types";
+import { SelectField } from "./SelectField";
 import { TransportBar } from "./TransportBar";
 import { WaveformPair } from "./WaveformPair";
-
-interface RecordingAttempt {
-  id: string;
-  name: string;
-  audioUrl: string;
-  durationMs: number;
-  createdAt: string;
-}
 
 interface PracticeWorkspaceProps {
   text?: TextDocument;
@@ -23,10 +19,7 @@ interface PracticeWorkspaceProps {
   recordingAudioUrl?: string;
   recordingError?: string;
   recordingDurationMs: number;
-  recordingAttempts: RecordingAttempt[];
-  selectedRecordingId?: string;
   isRecording: boolean;
-  isWaveformExpanded: boolean;
   modelId: string;
   modelOptions: Array<{
     id: string;
@@ -53,9 +46,6 @@ interface PracticeWorkspaceProps {
   onSelectSentence(sentenceId: string): void;
   onPlayReference(): void;
   onToggleRecording(): void;
-  onSelectRecording(recordingId: string): void;
-  onRenameRecording(recordingId: string, name: string): void;
-  onToggleWaveform(): void;
 }
 
 export function PracticeWorkspace({
@@ -71,10 +61,7 @@ export function PracticeWorkspace({
   recordingAudioUrl,
   recordingError,
   recordingDurationMs,
-  recordingAttempts,
-  selectedRecordingId,
   isRecording,
-  isWaveformExpanded,
   modelId,
   modelOptions,
   selectedModelStatus,
@@ -94,9 +81,6 @@ export function PracticeWorkspace({
   onSelectSentence,
   onPlayReference,
   onToggleRecording,
-  onSelectRecording,
-  onRenameRecording,
-  onToggleWaveform,
 }: PracticeWorkspaceProps) {
   const selectedSentence = sentences.find(
     (sentence) => sentence.id === selectedSentenceId,
@@ -104,6 +88,19 @@ export function PracticeWorkspace({
   const sentenceSizeClass = selectedSentence
     ? getSentenceSizeClass(selectedSentence.text)
     : "large";
+  const selectedSentenceButtonRef = useRef<HTMLButtonElement | null>(null);
+  const modelStatus =
+    selectedModelStatus !== "ready"
+      ? selectedModelStatusMessage ??
+        formatModelStatus(selectedModelStatus, selectedModelProgress)
+      : undefined;
+
+  useEffect(() => {
+    selectedSentenceButtonRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [selectedSentenceId]);
 
   if (!text) {
     return (
@@ -133,83 +130,73 @@ export function PracticeWorkspace({
             {selectedSentence ? selectedSentence.index + 1 : 0} / {sentences.length}
           </span>
         </div>
-        <div className="sentence-list">
-          {sentences.map((sentence) => (
-            <button
-              className={
-                sentence.id === selectedSentenceId
-                  ? "sentence-card active"
-                  : "sentence-card"
-              }
-              key={sentence.id}
-              type="button"
-              aria-pressed={sentence.id === selectedSentenceId}
-              onClick={() => onSelectSentence(sentence.id)}
+        <ScrollArea.Root className="sentence-scroll" type="auto">
+          <ScrollArea.Viewport className="sentence-scroll-viewport">
+            <ToggleGroup.Root
+              className="sentence-list"
+              type="multiple"
+              value={selectedSentenceId ? [selectedSentenceId] : []}
+              onValueChange={(values) => {
+                const nextValue = values.find((value) => value !== selectedSentenceId);
+                if (nextValue) onSelectSentence(nextValue);
+              }}
             >
-              <span className="sentence-index" aria-hidden="true">
-                {sentence.index + 1}
-              </span>
-              <span className="sentence-card-text">{sentence.text}</span>
-            </button>
-          ))}
-        </div>
+              {sentences.map((sentence) => (
+                <ToggleGroup.Item
+                  className="sentence-card"
+                  key={sentence.id}
+                  value={sentence.id}
+                  ref={
+                    sentence.id === selectedSentenceId
+                      ? selectedSentenceButtonRef
+                      : undefined
+                  }
+                >
+                  <span className="sentence-index" aria-hidden="true">
+                    {sentence.index + 1}
+                  </span>
+                  <span className="sentence-card-text">{sentence.text}</span>
+                </ToggleGroup.Item>
+              ))}
+            </ToggleGroup.Root>
+          </ScrollArea.Viewport>
+          <ScrollArea.Scrollbar className="scrollbar" orientation="vertical">
+            <ScrollArea.Thumb className="scrollbar-thumb" />
+          </ScrollArea.Scrollbar>
+        </ScrollArea.Root>
       </section>
       <section className="practice-controls-panel" aria-label="Practice controls">
         <div className="voice-controls" aria-label="Model and voice settings">
-          <label>
-            <span>Model</span>
-            <span
-              className="model-select-shell"
-              data-status={selectedModelStatus}
-            >
-              <select
-                aria-label="Model"
-                value={modelId}
-                onChange={(event) => onModelChange(event.target.value)}
-              >
-                {modelOptions.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.label} · {model.size}
-                  </option>
-                ))}
-              </select>
-              {selectedModelStatus !== "ready" ? (
-                <span className="model-status-overlay">
-                  {selectedModelStatusMessage
-                    ? selectedModelStatusMessage
-                    : formatModelStatus(selectedModelStatus, selectedModelProgress)}
-                </span>
-              ) : null}
-            </span>
-          </label>
-          <label>
-            <span>Voice</span>
-            <select
-              aria-label="Voice"
-              value={voiceId}
-              onChange={(event) => onVoiceChange(event.target.value)}
-            >
-              {voiceOptions.map((voice) => (
-                <option key={voice.id} value={voice.id}>
-                  {voice.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Expression</span>
-            <select
-              aria-label="Expression"
-              value={emotion}
-              onChange={(event) => onEmotionChange(event.target.value)}
-            >
-              {emotionOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <SelectField
+            className="model-select-field"
+            label="Model"
+            value={modelId}
+            options={modelOptions.map((model) => ({
+              id: model.id,
+              label: model.label,
+              detail:
+                model.status === "ready"
+                  ? undefined
+                  : model.statusMessage ??
+                    formatModelStatus(model.status, model.progress),
+            }))}
+            status={modelStatus}
+            onChange={onModelChange}
+          />
+          <SelectField
+            className="voice-select-field"
+            label="Voice"
+            value={voiceId}
+            options={voiceOptions}
+            onChange={onVoiceChange}
+          />
+          <SelectField
+            className="expression-select-field"
+            label="Expression"
+            value={emotion}
+            options={emotionOptions}
+            onChange={onEmotionChange}
+          />
         </div>
         <TransportBar
           isGeneratingReference={isGeneratingReference}
@@ -230,17 +217,11 @@ export function PracticeWorkspace({
           recordingAudioUrl={recordingAudioUrl}
           recordingError={recordingError}
           recordingDurationMs={recordingDurationMs}
-          recordingAttempts={recordingAttempts}
-          selectedRecordingId={selectedRecordingId}
           isRecording={isRecording}
-          isExpanded={isWaveformExpanded}
           speed={speed}
           volume={volume}
-          onSelectRecording={onSelectRecording}
-          onRenameRecording={onRenameRecording}
           onSpeedChange={onSpeedChange}
           onVolumeChange={onVolumeChange}
-          onToggleExpanded={onToggleWaveform}
         />
       </section>
     </section>

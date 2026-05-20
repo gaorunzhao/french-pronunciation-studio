@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 
@@ -64,40 +64,49 @@ describe("App", () => {
     ).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("collapses the sidebar while keeping navigation accessible", async () => {
+  it("uses a resizable source-list sidebar that can be collapsed and restored", async () => {
     const user = userEvent.setup();
     render(<App />);
 
     const sidebar = screen.getByRole("complementary", {
       name: "App sidebar",
     });
-    const collapseButton = screen.getByRole("button", {
-      name: "Collapse sidebar",
-    });
+    const appShell = screen.getByRole("main");
+    const resizer = screen.getByRole("separator", { name: "Resize sidebar" });
 
-    expect(sidebar).toHaveAttribute("data-collapsed", "false");
-    expect(collapseButton).toHaveAttribute("aria-expanded", "true");
+    expect(sidebar).not.toHaveAttribute("hidden");
+    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toHaveClass(
+      "sidebar-icon-button",
+    );
+    expect(screen.queryByRole("button", { name: "Show sidebar" })).not.toBeInTheDocument();
+    expect(resizer).toHaveAttribute("aria-orientation", "vertical");
+    expect(screen.getByRole("button", { name: "New passage" })).toBeInTheDocument();
 
-    await user.click(collapseButton);
+    fireEvent.pointerDown(resizer, { clientX: 312, pointerId: 1 });
 
-    const expandButton = screen.getByRole("button", {
-      name: "Expand sidebar",
-    });
-    expect(sidebar).toHaveAttribute("data-collapsed", "true");
-    expect(expandButton).toHaveAttribute("aria-expanded", "false");
+    expect(appShell).toHaveAttribute("data-sidebar-resizing", "true");
 
-    await user.click(screen.getByRole("button", { name: "New passage" }));
+    fireEvent.pointerMove(window, { clientX: 312, pointerId: 1 });
+    fireEvent.pointerUp(window, { pointerId: 1 });
 
-    expect(
-      screen.getByRole("button", { name: "New passage" }),
-    ).toHaveAttribute("aria-current", "page");
+    expect(appShell).toHaveStyle({ "--sidebar-width": "312px" });
+    expect(appShell).not.toHaveAttribute("data-sidebar-resizing");
 
-    await user.click(expandButton);
+    await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
 
-    expect(sidebar).toHaveAttribute("data-collapsed", "false");
-    expect(
-      screen.getByRole("button", { name: "Collapse sidebar" }),
-    ).toHaveAttribute("aria-expanded", "true");
+    expect(appShell).toHaveAttribute("data-sidebar-collapsed", "true");
+    expect(sidebar).toHaveAttribute("hidden");
+    expect(screen.queryByRole("separator", { name: "Resize sidebar" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show sidebar" })).toHaveClass(
+      "sidebar-restore-button",
+    );
+    expect(screen.queryByText("Hide")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Show sidebar" }));
+
+    expect(appShell).not.toHaveAttribute("data-sidebar-collapsed");
+    expect(sidebar).not.toHaveAttribute("hidden");
+    expect(appShell).toHaveStyle({ "--sidebar-width": "312px" });
   });
 
   it("keeps New passage as a dedicated creation screen", async () => {

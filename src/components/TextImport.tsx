@@ -4,6 +4,9 @@ interface TextImportProps {
   onCreate(input: { title: string; body: string }): Promise<void> | void;
 }
 
+const contentPlaceholder =
+  "Collez un article, un dialogue ou une leçon en français. Séparez les phrases avec un point, un point d'interrogation ou un point d'exclamation.";
+
 export function TextImport({ onCreate }: TextImportProps) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -53,7 +56,7 @@ export function TextImport({ onCreate }: TextImportProps) {
             value={body}
             onChange={(event) => setBody(event.target.value)}
             aria-label="Content"
-            placeholder="Paste a French article, dialogue, or lesson text..."
+            placeholder={contentPlaceholder}
             disabled={isPending}
           />
         </label>

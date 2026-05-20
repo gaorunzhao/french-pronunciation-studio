@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookOpenText,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { PracticeWorkspace } from "./components/PracticeWorkspace";
 import { SessionList } from "./components/SessionList";
 import { TextImport } from "./components/TextImport";
@@ -24,8 +30,8 @@ const defaultTtsAdapter = createDefaultTtsAdapter();
 const defaultTtsBackendUrl = configuredTtsBackendUrl();
 
 const defaultVoice: VoiceSettings = {
-  engine: defaultTtsBackendUrl ? "chatterbox" : "mock",
-  voiceId: "female-fr",
+  engine: defaultTtsBackendUrl ? "kokoro" : "mock",
+  voiceId: "default",
   speed: 1,
   styleStrength: 0.6,
 };
@@ -52,20 +58,15 @@ const seedPracticeText = {
 };
 
 const emotionStrengthById = {
-  neutral: 0.55,
-  warm: 0.68,
-  calm: 0.42,
-  expressive: 0.82,
-  focused: 0.6,
+  default: 0,
 } as const;
 
 type EmotionId = keyof typeof emotionStrengthById;
 
-const modelIds = ["chatterbox"] as const;
+const modelIds = ["system", "kokoro"] as const;
 type ModelId = (typeof modelIds)[number];
 
-const voiceIds = ["default", "female-fr", "male-fr"] as const;
-type VoiceId = (typeof voiceIds)[number];
+type VoiceId = string;
 
 interface PracticePreferences {
   modelId: ModelId;
@@ -91,48 +92,52 @@ interface LocalModel {
 
 const practicePreferencesKey = "voix-claire:practice-preferences";
 const defaultPracticePreferences: PracticePreferences = {
-  modelId: "chatterbox",
+  modelId: "system",
   voiceId: "default",
-  emotion: "warm",
+  emotion: "default",
   speed: 1,
   volume: 1,
 };
 const defaultModels: LocalModel[] = [
   {
-    id: "chatterbox",
-    name: "Chatterbox",
-    shortName: "Chatterbox",
-    size: "~11 GB",
-    detail: "Higher quality multilingual TTS. Voice cloning needs reference audio; expression maps to exaggeration.",
+    id: "system",
+    name: "macOS Speech",
+    shortName: "macOS",
+    size: "built-in",
+    detail: "Uses the installed macOS French system voices with the lowest memory cost.",
+    status: "ready",
+    progress: 100,
+    voices: [{ id: "default", label: "System default" }],
+    emotions: [{ id: "default", label: "Default" }],
+  },
+  {
+    id: "kokoro",
+    name: "Kokoro via Sherpa-ONNX",
+    shortName: "Kokoro",
+    size: "~158 MB",
+    detail: "Native sherpa-onnx int8 Kokoro runtime. French uses Siwis; extra voices are color presets.",
     status: "missing",
     progress: 0,
     statusMessage: "Checking",
-    voices: [{ id: "default", label: "Default" }],
-    emotions: [
-      { id: "neutral", label: "Neutral" },
-      { id: "warm", label: "Warm" },
-      { id: "calm", label: "Calm" },
-      { id: "expressive", label: "Expressive" },
-      { id: "focused", label: "Focused" },
-    ],
+    voices: [{ id: "default", label: "Siwis French" }],
+    emotions: [{ id: "default", label: "Default" }],
   },
 ];
+const defaultSidebarWidth = 248;
+const minSidebarWidth = 204;
+const maxSidebarWidth = 360;
 
 const defaultSeedState = createDefaultSeedState();
-
-interface RecordingAttempt {
-  id: string;
-  name: string;
-  audioUrl: string;
-  durationMs: number;
-  createdAt: string;
-}
 
 function configuredTtsBackendUrl() {
   const configuredUrl = import.meta.env.VITE_TTS_BACKEND_URL?.trim();
   if (configuredUrl) return configuredUrl;
 
   if (isTauriRuntime()) {
+    return "http://127.0.0.1:8765";
+  }
+
+  if (isNativeBridgeRuntime()) {
     return "http://127.0.0.1:8765";
   }
 
@@ -157,17 +162,16 @@ function isTauriRuntime() {
   );
 }
 
+function isNativeBridgeRuntime() {
+  return (
+    typeof window !== "undefined" &&
+    "nativeModel" in window
+  );
+}
+
 function isLocalBrowserRuntime() {
   if (typeof window === "undefined") return false;
   return ["localhost", "127.0.0.1"].includes(window.location.hostname);
-}
-
-function formatRecordingTimestamp(date: Date) {
-  return date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 }
 
 function sortSessionsNewestFirst(sessions: PracticeSession[]) {
@@ -212,8 +216,17 @@ function writePracticePreferences(preferences: PracticePreferences) {
   }
 }
 
+function hasStoredPracticePreferences() {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(practicePreferencesKey) !== null;
+  } catch {
+    return false;
+  }
+}
+
 function isVoiceId(value: unknown): value is VoiceId {
-  return typeof value === "string" && voiceIds.includes(value as VoiceId);
+  return typeof value === "string" && value.length > 0;
 }
 
 function isModelId(value: unknown): value is ModelId {
@@ -230,6 +243,167 @@ function parseModelStatus(value: unknown): LocalModel["status"] | undefined {
     return value;
   }
   return undefined;
+}
+
+async function speakWithSystemVoice(text: string, speed: number, voiceId: string) {
+  const nativeModel = (
+    window as Window & {
+      nativeModel?: {
+        speakSystem?: (payload: unknown) => Promise<{
+          audioPath?: string;
+          audioUrl?: string;
+          durationMs?: number;
+          playbackUrl?: string;
+          sampleRate?: number;
+        }>;
+      };
+    }
+  ).nativeModel;
+
+  if (nativeModel?.speakSystem) {
+    const result = await nativeModel.speakSystem({
+      text,
+      languageId: "fr",
+      voice: {
+        engine: "system",
+        voiceId,
+        speed,
+        styleStrength: 0,
+      },
+    });
+    return {
+      audioPath: result.audioPath,
+      durationMs: result.durationMs ?? estimateSpeechDurationMs(text),
+      playbackUrl:
+        result.playbackUrl ??
+        result.audioUrl ??
+        (result.audioPath?.startsWith("data:") ? result.audioPath : undefined),
+      sampleRate: result.sampleRate,
+    };
+  }
+
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "fr-FR";
+    utterance.rate = speed;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  return { durationMs: estimateSpeechDurationMs(text), playbackUrl: undefined };
+}
+
+interface HealthModelPayload {
+  id?: unknown;
+  name?: unknown;
+  shortName?: unknown;
+  size?: unknown;
+  status?: unknown;
+  progress?: unknown;
+  statusMessage?: unknown;
+  voices?: unknown;
+  emotions?: unknown;
+}
+
+interface HealthPayload {
+  model?: string;
+  modelLoaded?: boolean;
+  error?: string;
+  status?: string;
+  voices?: unknown;
+  models?: HealthModelPayload[];
+  defaultModelId?: unknown;
+}
+
+function estimateSpeechDurationMs(text: string) {
+  const wordCount = Math.max(1, text.split(/\s+/).filter(Boolean).length);
+  return Math.min(8_000, Math.max(900, wordCount * 340));
+}
+
+function parseVoiceOptions(value: unknown): LocalModel["voices"] {
+  if (!Array.isArray(value)) return [{ id: "default", label: "Default" }];
+
+  const voices = value
+    .map((voice) => {
+      if (!voice || typeof voice !== "object") return undefined;
+      const id = (voice as { id?: unknown }).id;
+      const label = (voice as { label?: unknown }).label;
+      if (!isVoiceId(id)) return undefined;
+      return {
+        id,
+        label: typeof label === "string" && label.trim() ? label : id,
+      };
+    })
+    .filter((voice): voice is { id: VoiceId; label: string } => Boolean(voice));
+
+  return voices.some((voice) => voice.id === "default")
+    ? voices
+    : [{ id: "default", label: "Default" }, ...voices];
+}
+
+function parseEmotionOptions(value: unknown): LocalModel["emotions"] {
+  if (!Array.isArray(value)) return [{ id: "default", label: "Default" }];
+
+  const emotions = value
+    .map((emotion) => {
+      if (!emotion || typeof emotion !== "object") return undefined;
+      const id = (emotion as { id?: unknown }).id;
+      const label = (emotion as { label?: unknown }).label;
+      if (!isEmotionId(id)) return undefined;
+      return {
+        id,
+        label: typeof label === "string" && label.trim() ? label : id,
+      };
+    })
+    .filter((emotion): emotion is { id: EmotionId; label: string } =>
+      Boolean(emotion),
+    );
+
+  return emotions.length > 0 ? emotions : [{ id: "default", label: "Default" }];
+}
+
+function mergeHealthModels(
+  currentModels: LocalModel[],
+  healthModels: HealthModelPayload[],
+) {
+  return currentModels.map((model) => {
+    const healthModel = healthModels.find(
+      (candidate) => candidate.id === model.id,
+    );
+    if (!healthModel) return model;
+
+    const status = parseModelStatus(healthModel.status) ?? model.status;
+    const progress =
+      typeof healthModel.progress === "number" && Number.isFinite(healthModel.progress)
+        ? healthModel.progress
+        : status === "ready"
+          ? 100
+          : model.progress;
+
+    return {
+      ...model,
+      name:
+        typeof healthModel.name === "string" && healthModel.name.trim()
+          ? healthModel.name
+          : model.name,
+      shortName:
+        typeof healthModel.shortName === "string" && healthModel.shortName.trim()
+          ? healthModel.shortName
+          : model.shortName,
+      size:
+        typeof healthModel.size === "string" && healthModel.size.trim()
+          ? healthModel.size
+          : model.size,
+      status,
+      progress,
+      statusMessage:
+        typeof healthModel.statusMessage === "string"
+          ? healthModel.statusMessage
+          : undefined,
+      voices: parseVoiceOptions(healthModel.voices),
+      emotions: parseEmotionOptions(healthModel.emotions),
+    };
+  });
 }
 
 function isEmotionId(value: unknown): value is EmotionId {
@@ -291,6 +465,7 @@ export default function App({
   ttsAdapter = defaultTtsAdapter,
 }: AppProps) {
   const initialPreferences = useMemo(() => readPracticePreferences(), []);
+  const hasSavedPreferences = useMemo(() => hasStoredPracticePreferences(), []);
   const [repository] = useState<StudioRepository>(
     () =>
       providedRepository ??
@@ -303,7 +478,6 @@ export default function App({
   const [screen, setScreen] = useState<Screen>(
     () => (providedRepository ? "import" : "practice"),
   );
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [texts, setTexts] = useState<TextDocument[]>(
     () => (providedRepository ? [] : [defaultSeedState.text]),
   );
@@ -334,12 +508,9 @@ export default function App({
   const [recordingAudioUrl, setRecordingAudioUrl] = useState<string>();
   const [recordingDurationMs, setRecordingDurationMs] = useState(0);
   const [recordingError, setRecordingError] = useState<string>();
-  const [recordingAttempts, setRecordingAttempts] = useState<RecordingAttempt[]>([]);
-  const [selectedRecordingId, setSelectedRecordingId] = useState<string>();
   const [isRecording, setIsRecording] = useState(false);
   const [speed, setSpeed] = useState(initialPreferences.speed);
   const [playbackVolume, setPlaybackVolume] = useState(initialPreferences.volume);
-  const [isWaveformExpanded, setIsWaveformExpanded] = useState(false);
   const [selectedModelId, setSelectedModelId] = useState<ModelId>(
     initialPreferences.modelId,
   );
@@ -367,14 +538,14 @@ export default function App({
     () => sentences.find((sentence) => sentence.id === selectedSentenceId),
     [selectedSentenceId, sentences],
   );
-  const selectedRecording = useMemo(
-    () => recordingAttempts.find((attempt) => attempt.id === selectedRecordingId),
-    [recordingAttempts, selectedRecordingId],
-  );
   const selectedModel = useMemo(
     () => models.find((model) => model.id === selectedModelId) ?? models[0],
     [models, selectedModelId],
   );
+  const [isLaunchVisible] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(defaultSidebarWidth);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarResizing, setIsSidebarResizing] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -382,7 +553,7 @@ export default function App({
     async function refreshModelStatus() {
       if (!defaultTtsBackendUrl) {
         if (isMounted) {
-          markChatterboxModel("missing", "Backend off");
+          markModel("kokoro", "missing", "Backend off");
         }
         return;
       }
@@ -390,32 +561,75 @@ export default function App({
       try {
         const response = await fetch(`${defaultTtsBackendUrl}/health`);
         if (!response.ok) throw new Error(`health ${response.status}`);
-        const health = (await response.json()) as {
-          model?: string;
-          modelLoaded?: boolean;
-          error?: string;
-          status?: string;
-        };
+        const health = (await response.json()) as HealthPayload;
+        if (Array.isArray(health.models)) {
+          const parsedModels = mergeHealthModels(models, health.models);
+          const defaultModelId = isModelId(health.defaultModelId)
+            ? health.defaultModelId
+            : undefined;
+          if (!isMounted) return;
+          setModels(parsedModels);
+          const nextSelectedModel = parsedModels.find(
+            (model) => model.id === selectedModelId,
+          );
+          if (
+            !hasSavedPreferences &&
+            defaultModelId &&
+            defaultModelId !== selectedModelId
+          ) {
+            const defaultModel = parsedModels.find(
+              (model) => model.id === defaultModelId,
+            );
+            setSelectedModelId(defaultModelId);
+            setVoiceId(defaultModel?.voices[0]?.id ?? "default");
+            setEmotion(defaultModel?.emotions[0]?.id ?? "default");
+          } else if (
+            nextSelectedModel &&
+            !nextSelectedModel.voices.some((voice) => voice.id === voiceId)
+          ) {
+            setVoiceId(nextSelectedModel.voices[0]?.id ?? "default");
+          }
+          return;
+        }
+
         const modelName = String(health.model ?? "").toLowerCase();
-        const isChatterboxBackend = modelName.includes("chatterbox");
+        const isKokoroBackend =
+          modelName.includes("kokoro") || modelName.includes("sherpa");
         const backendStatus = parseModelStatus(health.status);
-        const nextStatus = !isChatterboxBackend
+        const availableVoices = parseVoiceOptions(health.voices);
+        const nextStatus = !isKokoroBackend
           ? "missing"
           : health.modelLoaded
             ? "ready"
             : backendStatus === "error"
               ? "error"
-              : "missing";
+              : backendStatus === "downloading"
+                ? "downloading"
+                : "missing";
         if (!isMounted) return;
-        markChatterboxModel(
+        markModel(
+          "kokoro",
           nextStatus,
           nextStatus === "ready"
             ? undefined
-            : health.error || (isChatterboxBackend ? undefined : "Model missing"),
+            : health.error || (isKokoroBackend ? undefined : "Model missing"),
+          availableVoices,
         );
+        if (
+          selectedModelId === "kokoro" &&
+          availableVoices.length > 0 &&
+          !availableVoices.some((voice) => voice.id === voiceId)
+        ) {
+          setVoiceId(availableVoices[0].id);
+        }
+        if (!hasSavedPreferences && nextStatus === "ready") {
+          setSelectedModelId("kokoro");
+          setVoiceId(availableVoices[0]?.id ?? "default");
+          setEmotion("default");
+        }
       } catch {
         if (isMounted) {
-          markChatterboxModel("missing", "Backend off");
+          markModel("kokoro", "missing", "Backend off");
         }
       }
     }
@@ -425,38 +639,42 @@ export default function App({
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [hasSavedPreferences]);
 
-  function markChatterboxModel(
+  function markModel(
+    modelId: ModelId,
     status: LocalModel["status"],
     statusMessage?: string,
+    voices?: LocalModel["voices"],
   ) {
     setModels((currentModels) =>
       currentModels.map((model) =>
-        model.id === "chatterbox"
+        model.id === modelId
           ? {
               ...model,
               status,
               progress: status === "ready" ? 100 : 0,
               statusMessage,
+              voices: voices ?? model.voices,
             }
           : model,
       ),
     );
   }
 
-  async function ensureChatterboxModelReady() {
+  async function ensureSelectedModelReady() {
+    if (selectedModelId === "system") return true;
     if (selectedModel?.status === "ready") return true;
     if (!defaultTtsBackendUrl) {
-      markChatterboxModel("missing", "Backend off");
+      markModel(selectedModelId, "missing", "Backend off");
       return false;
     }
 
-    markChatterboxModel("downloading", "Downloading");
+    markModel(selectedModelId, "downloading", "Downloading");
 
     try {
       const response = await fetch(
-        `${defaultTtsBackendUrl}/models/chatterbox/download`,
+        `${defaultTtsBackendUrl}/models/${selectedModelId}/download`,
         { method: "POST" },
       );
       const payload = (await response.json()) as {
@@ -465,14 +683,15 @@ export default function App({
       };
 
       if (!response.ok || !payload.modelLoaded) {
-        markChatterboxModel("error", payload.error || "Download failed");
+        markModel(selectedModelId, "error", payload.error || "Download failed");
         return false;
       }
 
-      markChatterboxModel("ready");
+      markModel(selectedModelId, "ready");
       return true;
     } catch (error) {
-      markChatterboxModel(
+      markModel(
+        selectedModelId,
         "error",
         error instanceof Error ? error.message : "Download failed",
       );
@@ -602,7 +821,7 @@ function selectModel(modelId: string) {
   async function playReference() {
     if (!selectedSentence) return;
     if (selectedModel?.status !== "ready") {
-      const modelReady = await ensureChatterboxModelReady();
+      const modelReady = await ensureSelectedModelReady();
       if (!modelReady) return;
     }
 
@@ -618,7 +837,6 @@ function selectModel(modelId: string) {
       emotion,
       speed.toFixed(2),
     ].join(":");
-    setIsWaveformExpanded(true);
 
     if (referenceAudioUrl && referenceVoiceKey === nextReferenceVoiceKey) {
       setReferencePlaybackRequest((current) => current + 1);
@@ -629,12 +847,30 @@ function selectModel(modelId: string) {
     setReferenceError(undefined);
 
     try {
+      if (selectedModelId === "system") {
+        const spoken = await speakWithSystemVoice(sentenceText, speed, voiceId);
+        if (
+          selectedSentenceIdRef.current !== sentenceId ||
+          selectedTextIdRef.current !== textId
+        ) {
+          return;
+        }
+        setHasReference(Boolean(spoken.playbackUrl));
+        setReferenceAudioUrl(spoken.playbackUrl);
+        setReferenceVoiceKey(nextReferenceVoiceKey);
+        setReferenceDurationMs(spoken.durationMs);
+        if (spoken.playbackUrl) {
+          setReferencePlaybackRequest((current) => current + 1);
+        }
+        return;
+      }
+
       const generated = await ttsAdapter.generate({
         sentenceId,
         text: sentenceText,
         voice: {
           ...defaultVoice,
-          engine: "chatterbox",
+          engine: selectedModelId,
           voiceId,
           speed,
           styleStrength: emotionStrengthById[emotion],
@@ -732,18 +968,10 @@ function selectModel(modelId: string) {
         }
 
         const nextUrl = URL.createObjectURL(blob);
-        const createdAt = new Date();
-        const attempt: RecordingAttempt = {
-          id: `recording-${createdAt.getTime()}`,
-          name: `Take ${formatRecordingTimestamp(createdAt)}`,
-          audioUrl: nextUrl,
-          durationMs,
-          createdAt: createdAt.toISOString(),
-        };
-
-        setRecordingAttempts((currentAttempts) => [attempt, ...currentAttempts]);
-        setSelectedRecordingId(attempt.id);
-        setRecordingAudioUrl(nextUrl);
+        setRecordingAudioUrl((currentUrl) => {
+          if (currentUrl) URL.revokeObjectURL(currentUrl);
+          return nextUrl;
+        });
         setRecordingDurationMs(durationMs);
       });
 
@@ -761,30 +989,15 @@ function selectModel(modelId: string) {
   }
 
   function clearRecordingState() {
-    recordingAttempts.forEach((attempt) => URL.revokeObjectURL(attempt.audioUrl));
-    setRecordingAttempts([]);
-    setSelectedRecordingId(undefined);
-    setRecordingAudioUrl(undefined);
+    setRecordingAudioUrl((currentUrl) => {
+      if (currentUrl) URL.revokeObjectURL(currentUrl);
+      return undefined;
+    });
     setRecordingDurationMs(0);
     setRecordingError(undefined);
     setIsRecording(false);
     recordingChunksRef.current = [];
     recordingCancelledRef.current = true;
-  }
-
-  function selectRecordingAttempt(recordingId: string) {
-    const nextRecording = recordingAttempts.find((attempt) => attempt.id === recordingId);
-    setSelectedRecordingId(recordingId);
-    setRecordingAudioUrl(nextRecording?.audioUrl);
-    setRecordingDurationMs(nextRecording?.durationMs ?? 0);
-  }
-
-  function renameRecordingAttempt(recordingId: string, name: string) {
-    setRecordingAttempts((currentAttempts) =>
-      currentAttempts.map((attempt) =>
-        attempt.id === recordingId ? { ...attempt, name } : attempt,
-      ),
-    );
   }
 
   function selectAdjacentSentence(offset: number) {
@@ -854,33 +1067,82 @@ function selectModel(modelId: string) {
     mediaStreamRef.current = undefined;
   }
 
+  function resizeSidebar(clientX: number) {
+    const nextWidth = Math.min(
+      maxSidebarWidth,
+      Math.max(minSidebarWidth, Math.round(clientX)),
+    );
+    setSidebarWidth(nextWidth);
+  }
+
+  function startSidebarResize(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsSidebarResizing(true);
+    resizeSidebar(event.clientX);
+
+    function handlePointerMove(pointerEvent: PointerEvent) {
+      resizeSidebar(pointerEvent.clientX);
+    }
+
+    function stopPointerResize() {
+      setIsSidebarResizing(false);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopPointerResize);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopPointerResize, { once: true });
+  }
+
+  const appShellStyle = {
+    "--sidebar-width": `${sidebarWidth}px`,
+  } as CSSProperties & Record<"--sidebar-width", string>;
+
   return (
     <main
-      className={
-        isSidebarCollapsed ? "app-shell sidebar-collapsed" : "app-shell"
-      }
+      className="app-shell"
+      data-sidebar-collapsed={isSidebarCollapsed ? "true" : undefined}
+      data-sidebar-resizing={isSidebarResizing ? "true" : undefined}
+      style={appShellStyle}
     >
-      <aside
-        className="sidebar"
-        aria-label="App sidebar"
-        data-collapsed={isSidebarCollapsed}
+      <div
+        className={isLaunchVisible ? "launch-screen" : "launch-screen hidden"}
+        aria-hidden="true"
       >
+        <div className="launch-mark">
+          <img src="./app-icon.png" alt="" />
+          <span />
+        </div>
+        <div className="launch-wave" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+          <i />
+          <i />
+        </div>
+      </div>
+      {isSidebarCollapsed ? (
+        <button
+          className="sidebar-restore-button"
+          type="button"
+          aria-label="Show sidebar"
+          onClick={() => setIsSidebarCollapsed(false)}
+        >
+          <PanelLeftOpen aria-hidden="true" size={16} strokeWidth={2.2} />
+        </button>
+      ) : null}
+      <aside className="sidebar" aria-label="App sidebar" hidden={isSidebarCollapsed}>
         <div className="sidebar-header">
-          <h1 className="app-title">Voix Claire</h1>
+          <div className="brand-lockup">
+            <h1 className="app-title">Voix Claire</h1>
+          </div>
           <button
-            className="icon-button sidebar-toggle"
+            className="sidebar-icon-button"
             type="button"
-            aria-label={
-              isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
-            }
-            aria-expanded={!isSidebarCollapsed}
-            onClick={() => setIsSidebarCollapsed((current) => !current)}
+            aria-label="Collapse sidebar"
+            onClick={() => setIsSidebarCollapsed(true)}
           >
-            {isSidebarCollapsed ? (
-              <PanelLeftOpen aria-hidden="true" size={18} strokeWidth={2.1} />
-            ) : (
-              <PanelLeftClose aria-hidden="true" size={18} strokeWidth={2.1} />
-            )}
+            <PanelLeftClose aria-hidden="true" size={16} strokeWidth={2.2} />
           </button>
         </div>
         <nav className="nav-stack" aria-label="Main navigation">
@@ -891,7 +1153,6 @@ function selectModel(modelId: string) {
             aria-current={screen === "import" ? "page" : undefined}
             onClick={() => setScreen("import")}
           >
-            <BookOpenText aria-hidden="true" size={18} strokeWidth={2.1} />
             <span className="nav-label">New passage</span>
           </button>
         </nav>
@@ -903,6 +1164,29 @@ function selectModel(modelId: string) {
           onReorderSessions={reorderSessions}
         />
       </aside>
+      {isSidebarCollapsed ? null : (
+        <div
+          className="sidebar-resizer"
+          role="separator"
+          aria-label="Resize sidebar"
+          aria-orientation="vertical"
+          aria-valuemin={minSidebarWidth}
+          aria-valuemax={maxSidebarWidth}
+          aria-valuenow={sidebarWidth}
+          tabIndex={0}
+          onPointerDown={startSidebarResize}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              setSidebarWidth((width) => Math.max(minSidebarWidth, width - 12));
+            }
+            if (event.key === "ArrowRight") {
+              event.preventDefault();
+              setSidebarWidth((width) => Math.min(maxSidebarWidth, width + 12));
+            }
+          }}
+        />
+      )}
       <section className="workspace" aria-label="Practice workspace">
         {screen === "import" ? (
           <TextImport onCreate={createSessionFromImport} />
@@ -917,13 +1201,10 @@ function selectModel(modelId: string) {
             referencePlaybackRequest={referencePlaybackRequest}
             referenceError={referenceError}
             referenceDurationMs={referenceDurationMs}
-            recordingAudioUrl={selectedRecording?.audioUrl}
+            recordingAudioUrl={recordingAudioUrl}
             recordingError={recordingError}
-            recordingDurationMs={selectedRecording?.durationMs ?? recordingDurationMs}
-            recordingAttempts={recordingAttempts}
-            selectedRecordingId={selectedRecordingId}
+            recordingDurationMs={recordingDurationMs}
             isRecording={isRecording}
-            isWaveformExpanded={isWaveformExpanded}
             modelId={selectedModelId}
             modelOptions={models.map((model) => ({
               id: model.id,
@@ -954,9 +1235,6 @@ function selectModel(modelId: string) {
             onSelectSentence={selectSentence}
             onPlayReference={playReference}
             onToggleRecording={toggleRecording}
-            onSelectRecording={selectRecordingAttempt}
-            onRenameRecording={renameRecordingAttempt}
-            onToggleWaveform={() => setIsWaveformExpanded((current) => !current)}
           />
         )}
       </section>

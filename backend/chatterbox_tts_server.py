@@ -20,6 +20,11 @@ VOICE_PROMPT_ENV = {
     "female-fr": "TTS_FEMALE_PROMPT_PATH",
     "male-fr": "TTS_MALE_PROMPT_PATH",
 }
+VOICE_LABELS = {
+    "default": "Default",
+    "female-fr": "Female FR",
+    "male-fr": "Male FR",
+}
 TERMINAL_PUNCTUATION = (".", "!", "?", "-", ",", "、", "，", "。", "？", "！")
 
 
@@ -99,6 +104,7 @@ class ChatterboxEngine:
             "modelInstalled": self.model_loaded,
             "hfEndpoint": active_hf_endpoint(),
             "downloadEndpoint": "/models/chatterbox/download",
+            "voices": available_voice_options(),
             "error": self._last_model_error,
         }
 
@@ -157,9 +163,14 @@ class ChatterboxEngine:
         import torch
         from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
-        device = self.device
+        device = None if self.device in (None, "", "auto") else self.device
         if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
         self.device = device
         return ChatterboxMultilingualTTS.from_pretrained(device=device)
 
@@ -194,6 +205,15 @@ def build_chatterbox_generate_kwargs(language_id: str, voice: dict[str, Any]) ->
         "min_p": 0.05,
         "top_p": 0.85,
     }
+
+
+def available_voice_options() -> list[dict[str, str]]:
+    voices = [{"id": "default", "label": VOICE_LABELS["default"]}]
+    for voice_id, env_name in VOICE_PROMPT_ENV.items():
+        prompt_path = os.environ.get(env_name, "").strip()
+        if prompt_path and Path(prompt_path).exists():
+            voices.append({"id": voice_id, "label": VOICE_LABELS[voice_id]})
+    return voices
 
 
 def _cfg_for_speed(speed: float) -> float:

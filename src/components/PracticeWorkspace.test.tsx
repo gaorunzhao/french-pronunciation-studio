@@ -3,6 +3,24 @@ import userEvent from "@testing-library/user-event";
 import App from "../App";
 import type { GeneratedAudio, TtsAdapter } from "../modelAdapters/types";
 import { TextImport } from "./TextImport";
+import { WaveformPair } from "./WaveformPair";
+
+async function chooseSelectOption(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+  optionName: string,
+) {
+  await user.click(screen.getByRole("combobox", { name: label }));
+  await user.click(
+    await screen.findByRole("option", {
+      name: new RegExp(`^${escapeRegExp(optionName)}\\b`),
+    }),
+  );
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 describe("Practice workspace", () => {
   it("imports a passage and shows line cards in practice", async () => {
@@ -17,6 +35,10 @@ describe("Practice workspace", () => {
     );
     await user.click(screen.getByRole("button", { name: "Start practice" }));
 
+    expect(screen.queryByText("Current passage")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reference pending")).not.toBeInTheDocument();
+    expect(screen.queryByText("Total lines")).not.toBeInTheDocument();
+    expect(screen.queryByText("Current line")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Cafe dialogue, 2 sentences" }),
     ).toBeInTheDocument();
@@ -26,12 +48,21 @@ describe("Practice workspace", () => {
     });
 
     expect(firstSentence).toHaveAttribute("aria-pressed", "true");
+    expect(firstSentence).toHaveAttribute("data-state", "on");
     expect(secondSentence).toHaveAttribute("aria-pressed", "false");
+    expect(secondSentence).toHaveAttribute("data-state", "off");
 
+    const scrollIntoViewSpy = vi.spyOn(Element.prototype, "scrollIntoView");
+    scrollIntoViewSpy.mockClear();
     await user.click(secondSentence);
 
     expect(firstSentence).toHaveAttribute("aria-pressed", "false");
     expect(secondSentence).toHaveAttribute("aria-pressed", "true");
+    expect(secondSentence).toHaveAttribute("data-state", "on");
+    expect(scrollIntoViewSpy).toHaveBeenCalledWith({
+      behavior: "smooth",
+      block: "start",
+    });
   });
 
   it("keeps the waveform area visible even before generated audio", async () => {
@@ -49,14 +80,42 @@ describe("Practice workspace", () => {
       name: "Le train vers le Grand Lac Salé",
     });
 
-    expect(screen.getByText("Waveform")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show waveform" })).toBeInTheDocument();
+    expect(screen.queryByText("Waveform")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show waveform" })).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Empty waveform" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Recording progress")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Recordings")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Listen" }));
 
     await waitFor(() => expect(ttsAdapter.generate).toHaveBeenCalledTimes(1));
-    expect(screen.getByText("Waveform")).toBeInTheDocument();
+    expect(screen.queryByText("Waveform")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Reference progress")).toBeDisabled();
+  });
+
+  it("uses native system speech audio for the waveform when the bridge returns audio", async () => {
+    const user = userEvent.setup();
+    const speakSystem = vi.fn(async () => ({
+      audioPath: "/tmp/voix-claire/system.wav",
+      audioUrl: "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=",
+      durationMs: 1200,
+      sampleRate: 22050,
+    }));
+    vi.stubGlobal("nativeModel", { speakSystem });
+    render(<App />);
+
+    await screen.findByRole("heading", {
+      level: 2,
+      name: "Le train vers le Grand Lac Salé",
+    });
+
+    await chooseSelectOption(user, "Model", "macOS");
+    await user.click(screen.getByRole("button", { name: "Listen" }));
+
+    await waitFor(() => expect(speakSystem).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("img", { name: "Reference waveform" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Reference progress")).toBeEnabled();
+    expect(screen.queryByLabelText("Recording progress")).not.toBeInTheDocument();
   });
 
   it("shows reference generation progress and a playable audio control", async () => {
@@ -100,7 +159,7 @@ describe("Practice workspace", () => {
     await user.click(screen.getByRole("button", { name: "Listen" }));
     expect(ttsAdapter.generate).toHaveBeenCalledTimes(1);
     expect(playSpy).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Waveform")).toBeInTheDocument();
+    expect(screen.queryByText("Waveform")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Record" }),
     ).toBeInTheDocument();
@@ -109,28 +168,28 @@ describe("Practice workspace", () => {
     expect(screen.queryByText("Your Recording")).not.toBeInTheDocument();
   });
 
-  it("downloads and loads Chatterbox before generating audio when the backend has no loaded model", async () => {
+  it("downloads and loads Kokoro before generating audio when the backend has no loaded model", async () => {
     const user = userEvent.setup();
     const fetcher = vi
       .fn()
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          backend: "chatterbox",
-          model: "ResembleAI/chatterbox",
+          backend: "swift-native",
+          model: "sherpa-onnx-kokoro-int8",
           status: "missing",
           modelLoaded: false,
-          downloadEndpoint: "/models/chatterbox/download",
+          downloadEndpoint: "/models/kokoro/download",
         }),
       })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          backend: "chatterbox",
-          model: "ResembleAI/chatterbox",
+          backend: "swift-native",
+          model: "sherpa-onnx-kokoro-int8",
           status: "ready",
           modelLoaded: true,
-          downloadEndpoint: "/models/chatterbox/download",
+          downloadEndpoint: "/models/kokoro/download",
         }),
       });
     vi.stubGlobal("fetch", fetcher);
@@ -145,6 +204,8 @@ describe("Practice workspace", () => {
     try {
       render(<App ttsAdapter={ttsAdapter} />);
 
+      await screen.findByRole("combobox", { name: "Model" });
+      await chooseSelectOption(user, "Model", "Kokoro");
       await user.click(
         await screen.findByRole("button", {
           name: "Le train vers le Grand Lac Salé, 17 sentences",
@@ -155,7 +216,7 @@ describe("Practice workspace", () => {
 
       await waitFor(() =>
         expect(fetcher).toHaveBeenCalledWith(
-          "http://127.0.0.1:8765/models/chatterbox/download",
+          "http://127.0.0.1:8765/models/kokoro/download",
           expect.objectContaining({ method: "POST" }),
         ),
       );
@@ -212,8 +273,6 @@ describe("Practice workspace", () => {
       name: "Le train vers le Grand Lac Salé",
     });
 
-    await user.click(screen.getByRole("button", { name: "Show waveform" }));
-
     await user.click(screen.getByRole("button", { name: "Playback speed" }));
     expect(screen.getByRole("menu", { name: "Playback speed" })).toBeInTheDocument();
     await user.click(screen.getByRole("region", { name: "Current line" }));
@@ -224,6 +283,9 @@ describe("Practice workspace", () => {
     expect(screen.getByRole("button", { name: "Playback speed" })).toHaveTextContent("0.75x");
 
     await user.click(screen.getByRole("button", { name: "Reference volume menu" }));
+    const slider = screen.getByRole("slider", { name: "Reference volume" });
+    expect(slider).toBeInTheDocument();
+    await user.click(slider);
     expect(screen.getByRole("slider", { name: "Reference volume" })).toBeInTheDocument();
     await user.click(screen.getByRole("region", { name: "Current line" }));
     expect(screen.queryByRole("slider", { name: "Reference volume" })).not.toBeInTheDocument();
@@ -245,14 +307,14 @@ describe("Practice workspace", () => {
       name: "Le train vers le Grand Lac Salé",
     });
 
-    await user.selectOptions(screen.getByLabelText("Expression"), "expressive");
-    await user.click(screen.getByRole("button", { name: "Show waveform" }));
+    await chooseSelectOption(user, "Model", "Kokoro");
+    await chooseSelectOption(user, "Expression", "Default");
     await user.click(screen.getByRole("button", { name: "Playback speed" }));
     await user.click(screen.getByRole("menuitemradio", { name: "1.5x" }));
     await user.click(screen.getByRole("button", { name: "Reference volume menu" }));
-    fireEvent.change(screen.getByRole("slider", { name: "Reference volume" }), {
-      target: { value: "0.42" },
-    });
+    const volumeSlider = screen.getByRole("slider", { name: "Reference volume" });
+    volumeSlider.focus();
+    fireEvent.keyDown(volumeSlider, { key: "ArrowDown" });
 
     unmount();
     render(<App ttsAdapter={ttsAdapter} />);
@@ -262,15 +324,18 @@ describe("Practice workspace", () => {
       name: "Le train vers le Grand Lac Salé",
     });
 
-    expect(screen.getByLabelText("Voice")).toHaveValue("default");
-    expect(screen.getByLabelText("Expression")).toHaveValue("expressive");
-    await user.click(screen.getByRole("button", { name: "Show waveform" }));
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveTextContent("Kokoro");
+    expect(screen.getByRole("combobox", { name: "Voice" })).toHaveTextContent("Siwis French");
+    expect(screen.getByRole("combobox", { name: "Expression" })).toHaveTextContent("Default");
     expect(screen.getByRole("button", { name: "Playback speed" })).toHaveTextContent("1.5x");
     await user.click(screen.getByRole("button", { name: "Reference volume menu" }));
-    expect(screen.getByRole("slider", { name: "Reference volume" })).toHaveValue("0.42");
+    expect(screen.getByRole("slider", { name: "Reference volume" })).toHaveAttribute(
+      "aria-valuenow",
+      "0.99",
+    );
   });
 
-  it("does not autoplay when the waveform is folded and shown again", async () => {
+  it("keeps the waveform open without an unfold control", async () => {
     const user = userEvent.setup();
     const playSpy = vi.spyOn(HTMLMediaElement.prototype, "play");
     const ttsAdapter: TtsAdapter = {
@@ -292,9 +357,9 @@ describe("Practice workspace", () => {
     await waitFor(() => expect(screen.getByLabelText("Reference progress")).toBeEnabled());
     playSpy.mockClear();
 
-    await user.click(screen.getByRole("button", { name: "Fold waveform" }));
-    await user.click(screen.getByRole("button", { name: "Show waveform" }));
-
+    expect(screen.queryByRole("button", { name: "Fold waveform" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show waveform" })).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Reference waveform" })).toBeInTheDocument();
     expect(playSpy).not.toHaveBeenCalled();
   });
 
@@ -340,9 +405,9 @@ describe("Practice workspace", () => {
     await user.click(screen.getByRole("button", { name: "Record" }));
 
     expect(
-      screen.getByText("Recording is not available in this browser."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Waveform")).toBeInTheDocument();
+      screen.queryByText("Recording is not available in this browser."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Waveform")).not.toBeInTheDocument();
   });
 
   it("uses content-length based text sizing for the player text", async () => {
@@ -390,7 +455,8 @@ describe("Practice workspace", () => {
     );
   });
 
-  it("keeps voice and expression controls compact with the real Chatterbox voice", async () => {
+  it("keeps voice and expression controls compact with the real Kokoro voice", async () => {
+    const user = userEvent.setup();
     render(<App />);
 
     await screen.findByRole("heading", {
@@ -398,10 +464,128 @@ describe("Practice workspace", () => {
       name: "Le train vers le Grand Lac Salé",
     });
 
-    expect(screen.getByLabelText("Voice")).toHaveValue("default");
-    expect(screen.getByRole("option", { name: "Default" })).toBeInTheDocument();
+    await chooseSelectOption(user, "Model", "Kokoro");
+    expect(screen.getByRole("combobox", { name: "Voice" })).toHaveTextContent("Siwis French");
+    await user.click(screen.getByRole("combobox", { name: "Voice" }));
+    expect(await screen.findByRole("option", { name: "Siwis French" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("combobox", { name: "Model" }));
+    expect(screen.queryByRole("option", { name: /158 MB/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Female" })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Male" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a text-based sidebar without decorative navigation icons", async () => {
+    render(<App />);
+
+    await screen.findByRole("heading", {
+      level: 2,
+      name: "Le train vers le Grand Lac Salé",
+    });
+
+    const sidebar = screen.getByRole("complementary", { name: "App sidebar" });
+    expect(screen.getByRole("button", { name: "Collapse sidebar" }).querySelector("svg")).toBeInTheDocument();
+    expect(sidebar.querySelector(".brand-mark")).toBeNull();
+    expect(screen.getByRole("button", { name: "Collapse sidebar" })).not.toHaveTextContent("Hide");
+    expect(screen.getByRole("button", { name: "New passage" })).toBeVisible();
+  });
+
+  it("uses chart legend toggles for model and user waveform series", async () => {
+    const user = userEvent.setup();
+    render(
+      <WaveformPair
+        hasReference
+        isGeneratingReference={false}
+        referenceAudioUrl="mock://reference.wav"
+        referencePlaybackRequest={0}
+        referenceDurationMs={1800}
+        recordingAudioUrl="mock://recording.wav"
+        recordingDurationMs={1500}
+        isRecording={false}
+        speed={1}
+        volume={1}
+        onSpeedChange={vi.fn()}
+        onVolumeChange={vi.fn()}
+      />,
+    );
+
+    const modelToggle = screen.getByRole("button", { name: "Model waveform" });
+    const userToggle = screen.getByRole("button", { name: "You waveform" });
+
+    expect(modelToggle).toHaveAttribute("aria-pressed", "true");
+    expect(userToggle).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("img", { name: "Model and user waveform" }),
+    ).toBeInTheDocument();
+
+    await user.click(modelToggle);
+
+    expect(modelToggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("img", { name: "User waveform" })).toBeInTheDocument();
+
+    await user.click(userToggle);
+
+    expect(userToggle).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("img", { name: "Empty waveform" })).toBeInTheDocument();
+  });
+
+  it("uses one waveform time axis for model and user durations", () => {
+    const { container } = render(
+      <WaveformPair
+        hasReference
+        isGeneratingReference={false}
+        referenceAudioUrl="mock://reference.wav"
+        referencePlaybackRequest={0}
+        referenceDurationMs={1800}
+        recordingAudioUrl="mock://recording.wav"
+        recordingDurationMs={2400}
+        isRecording={false}
+        speed={1}
+        volume={1}
+        onSpeedChange={vi.fn()}
+        onVolumeChange={vi.fn()}
+      />,
+    );
+
+    const waveform = screen.getByRole("img", { name: "Model and user waveform" });
+
+    expect(waveform).toHaveAttribute("data-axis-start", "18");
+    expect(waveform).toHaveAttribute("data-axis-end", "702");
+    expect(waveform).toHaveAttribute("data-axis-duration-ms", "2400");
+    expect(container.querySelector(".waveform-playhead")).toBeNull();
+  });
+
+  it("shows a shared-axis playhead while reference audio is playing", () => {
+    const { container } = render(
+      <WaveformPair
+        hasReference
+        isGeneratingReference={false}
+        referenceAudioUrl="mock://reference.wav"
+        referencePlaybackRequest={0}
+        referenceDurationMs={1800}
+        recordingAudioUrl="mock://recording.wav"
+        recordingDurationMs={2400}
+        isRecording={false}
+        speed={1}
+        volume={1}
+        onSpeedChange={vi.fn()}
+        onVolumeChange={vi.fn()}
+      />,
+    );
+
+    const waveform = screen.getByRole("img", { name: "Model and user waveform" });
+    const referenceAudio = container.querySelector(
+      'audio[src="mock://reference.wav"]',
+    ) as HTMLAudioElement;
+
+    fireEvent.play(referenceAudio);
+    fireEvent.timeUpdate(referenceAudio, {
+      target: { currentTime: 0.9 },
+    });
+
+    expect(waveform).toHaveAttribute("data-active-playback-kind", "reference");
+    expect(waveform).toHaveAttribute("data-playhead-position-ms", "900");
+    expect(container.querySelector(".waveform-playhead.reference")).toBeInTheDocument();
   });
 
   it("supports arrow key navigation between lines", async () => {
@@ -439,6 +623,17 @@ describe("Text import", () => {
     expect(screen.getByLabelText("Title")).toBeInTheDocument();
     expect(screen.getByLabelText("Content")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start practice" })).toBeDisabled();
+  });
+
+  it("keeps placeholder typography aligned with typed New passage text", () => {
+    render(<TextImport onCreate={vi.fn()} />);
+
+    expect(screen.getByPlaceholderText("Optional")).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText(
+        "Collez un article, un dialogue ou une leçon en français. Séparez les phrases avec un point, un point d'interrogation ou un point d'exclamation.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("disables fields while async create is pending", async () => {
@@ -534,7 +729,9 @@ describe("Text import", () => {
     expect(screen.queryByText("French passage")).not.toBeInTheDocument();
     expect(screen.getByText("0 lines")).toBeInTheDocument();
     expect(
-      screen.getByPlaceholderText("Paste a French article, dialogue, or lesson text..."),
+      screen.getByPlaceholderText(
+        "Collez un article, un dialogue ou une leçon en français. Séparez les phrases avec un point, un point d'interrogation ou un point d'exclamation.",
+      ),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start practice" })).toBeInTheDocument();
   });

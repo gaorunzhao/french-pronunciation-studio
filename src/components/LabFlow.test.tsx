@@ -3,8 +3,25 @@ import userEvent from "@testing-library/user-event";
 import App from "../App";
 import type { GenerateTtsInput } from "../modelAdapters/types";
 
+async function chooseSelectOption(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+  optionName: string,
+) {
+  await user.click(screen.getByRole("combobox", { name: label }));
+  await user.click(
+    await screen.findByRole("option", {
+      name: new RegExp(`^${escapeRegExp(optionName)}\\b`),
+    }),
+  );
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 describe("Reference playback flow", () => {
-  it("passes expression strength and speed to the TTS adapter", async () => {
+  it("passes default expression strength and speed to the TTS adapter", async () => {
     const user = userEvent.setup();
     const ttsAdapter = {
       generate: vi.fn(async (_input: GenerateTtsInput) => ({
@@ -25,8 +42,8 @@ describe("Reference playback flow", () => {
       level: 2,
       name: "Le train vers le Grand Lac Salé",
     });
-    await user.selectOptions(screen.getByLabelText("Expression"), "expressive");
-    await user.click(screen.getByRole("button", { name: "Show waveform" }));
+    await chooseSelectOption(user, "Model", "Kokoro");
+    await chooseSelectOption(user, "Expression", "Default");
     const speedButton = screen.getByRole("button", { name: "Playback speed" });
     expect(speedButton).toHaveTextContent("1.0x");
     await user.click(speedButton);
@@ -36,7 +53,7 @@ describe("Reference playback flow", () => {
     await waitFor(() => expect(ttsAdapter.generate).toHaveBeenCalledTimes(1));
     expect(ttsAdapter.generate.mock.calls[0][0].voice).toMatchObject({
       voiceId: "default",
-      styleStrength: 0.82,
+      styleStrength: 0,
       speed: 1.5,
     });
   });
@@ -86,7 +103,7 @@ describe("Reference playback flow", () => {
         screen.getByLabelText("Reference progress"),
       ).toBeDisabled(),
     );
-    expect(screen.getByText("Waveform")).toBeInTheDocument();
+    expect(screen.queryByText("Waveform")).not.toBeInTheDocument();
   });
 
   it("clears audio state when selecting a different sentence", async () => {
@@ -121,7 +138,7 @@ describe("Reference playback flow", () => {
     await user.click(screen.getByRole("button", { name: "Bonsoir." }));
 
     expect(screen.getByLabelText("Reference progress")).toBeDisabled();
-    expect(screen.getByText("Waveform")).toBeInTheDocument();
+    expect(screen.queryByText("Waveform")).not.toBeInTheDocument();
   });
 
   it("does not show a loop control in the transport bar", async () => {

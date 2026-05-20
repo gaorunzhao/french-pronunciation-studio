@@ -129,6 +129,11 @@ describe("Passages sidebar", () => {
         name: "Le train vers le Grand Lac Salé, 17 sentences",
       }),
     ).toHaveAttribute("aria-pressed", "false");
+    expect(
+      screen.getByRole("button", {
+        name: "Le train vers le Grand Lac Salé, 17 sentences",
+      }),
+    ).toHaveAttribute("data-state", "off");
     expect(screen.queryByRole("button", { name: "Sessions" })).not.toBeInTheDocument();
   });
 });
