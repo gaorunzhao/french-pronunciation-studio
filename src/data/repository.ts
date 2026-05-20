@@ -12,6 +12,14 @@ export interface CreateTextResult {
   sentences: PracticeSentence[];
 }
 
+export interface UpdateTextInput {
+  textId: string;
+  title: string;
+  body: string;
+  source?: string;
+  notes?: string;
+}
+
 export interface AddAttemptInput {
   sessionId: string;
   sentenceId: string;
@@ -23,6 +31,8 @@ export interface AddAttemptInput {
 
 export interface StudioRepository {
   createText(input: CreateTextInput): Promise<CreateTextResult>;
+  updateText(input: UpdateTextInput): Promise<CreateTextResult>;
+  deleteText(textId: string): Promise<void>;
   listTexts(): Promise<TextDocument[]>;
   listSentences(textId: string): Promise<PracticeSentence[]>;
   createSession(textId: string): Promise<PracticeSession>;

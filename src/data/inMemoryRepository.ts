@@ -1,6 +1,6 @@
 import { chunkFrenchText } from "../domain/sentenceChunker";
 import type { AnalysisResult, Attempt, PracticeSentence, PracticeSession, TextDocument } from "../domain/types";
-import type { AddAttemptInput, CreateTextInput, CreateTextResult, StudioRepository } from "./repository";
+import type { AddAttemptInput, CreateTextInput, CreateTextResult, StudioRepository, UpdateTextInput } from "./repository";
 
 export interface InitialRepositoryState {
   texts?: TextDocument[];
@@ -52,6 +52,80 @@ export class InMemoryRepository implements StudioRepository {
 
   async listTexts(): Promise<TextDocument[]> {
     return this.texts.map(cloneTextDocument);
+  }
+
+  async updateText(input: UpdateTextInput): Promise<CreateTextResult> {
+    const text = this.texts.find((item) => item.id === input.textId);
+    if (!text) {
+      throw new Error(`Text not found: ${input.textId}`);
+    }
+
+    const oldSentenceIds = new Set(
+      this.sentences
+        .filter((sentence) => sentence.textId === input.textId)
+        .map((sentence) => sentence.id)
+    );
+    const sentenceBodies = chunkFrenchText(input.body);
+    const nextSentences = sentenceBodies.map((body, index): PracticeSentence => ({
+      id: createId("sentence"),
+      textId: input.textId,
+      index,
+      text: body,
+      state: "new"
+    }));
+
+    this.sentences = [
+      ...this.sentences.filter((sentence) => sentence.textId !== input.textId),
+      ...nextSentences
+    ];
+    this.attempts = this.attempts.filter(
+      (attempt) => !oldSentenceIds.has(attempt.sentenceId)
+    );
+    this.sessions = this.sessions.map((session) =>
+      session.textId === input.textId
+        ? {
+            ...session,
+            attemptIds: session.attemptIds.filter((attemptId) =>
+              this.attempts.some((attempt) => attempt.id === attemptId)
+            )
+          }
+        : session
+    );
+
+    text.title = input.title;
+    text.source = input.source;
+    text.notes = input.notes;
+    text.sentenceIds = nextSentences.map((sentence) => sentence.id);
+
+    return {
+      text: cloneTextDocument(text),
+      sentences: nextSentences.map(clonePracticeSentence)
+    };
+  }
+
+  async deleteText(textId: string): Promise<void> {
+    if (!this.texts.some((text) => text.id === textId)) {
+      throw new Error(`Text not found: ${textId}`);
+    }
+
+    const sentenceIds = new Set(
+      this.sentences
+        .filter((sentence) => sentence.textId === textId)
+        .map((sentence) => sentence.id)
+    );
+    const sessionIds = new Set(
+      this.sessions
+        .filter((session) => session.textId === textId)
+        .map((session) => session.id)
+    );
+
+    this.texts = this.texts.filter((text) => text.id !== textId);
+    this.sentences = this.sentences.filter((sentence) => sentence.textId !== textId);
+    this.sessions = this.sessions.filter((session) => session.textId !== textId);
+    this.attempts = this.attempts.filter(
+      (attempt) =>
+        !sentenceIds.has(attempt.sentenceId) && !sessionIds.has(attempt.sessionId)
+    );
   }
 
   async listSentences(textId: string): Promise<PracticeSentence[]> {

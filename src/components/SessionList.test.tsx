@@ -79,6 +79,57 @@ describe("Passages sidebar", () => {
     expect(screen.queryByRole("button", { name: "Le train partira demain." })).not.toBeInTheDocument();
   });
 
+  it("lets the user edit a saved passage", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await createPracticeSession(user, "Cafe dialogue", "Bonjour. Merci.");
+    expect(
+      screen.queryByRole("menuitem", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "More options for Cafe dialogue" }));
+    await user.click(screen.getByRole("menuitem", { name: "Edit" }));
+    await user.clear(screen.getByLabelText("Title"));
+    await user.type(screen.getByLabelText("Title"), "Dialogue du matin");
+    await user.clear(screen.getByLabelText("Content"));
+    await user.type(screen.getByLabelText("Content"), "Bonsoir. A demain.");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(
+      screen.getByRole("button", { name: "Dialogue du matin, 2 sentences" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Cafe dialogue, 2 sentences" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bonsoir." })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("lets the user delete a saved passage", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App />);
+
+    await createPracticeSession(user, "Cafe dialogue", "Bonjour.");
+    await user.click(screen.getByRole("button", { name: "More options for Cafe dialogue" }));
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+
+    expect(confirmSpy).toHaveBeenCalledWith('Delete "Cafe dialogue"? This cannot be undone.');
+    expect(
+      screen.queryByRole("button", { name: "Cafe dialogue, 1 sentence" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: "Le train vers le Grand Lac Salé",
+      }),
+    ).toBeInTheDocument();
+
+    confirmSpy.mockRestore();
+  });
+
   it("places newly imported passages first", async () => {
     const user = userEvent.setup();
     render(<App />);

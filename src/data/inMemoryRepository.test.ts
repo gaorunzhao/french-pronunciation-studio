@@ -60,6 +60,75 @@ describe("InMemoryRepository", () => {
     ]);
   });
 
+  it("updates a text document and replaces its sentence records", async () => {
+    const repository = new InMemoryRepository();
+    const created = await repository.createText({
+      title: "Cafe dialogue",
+      body: "Bonjour. Je voudrais un cafe."
+    });
+    const session = await repository.createSession(created.text.id);
+    await repository.addAttempt({
+      sessionId: session.id,
+      sentenceId: created.sentences[0].id,
+      recordingPath: "mock://bonjour.wav",
+      durationMs: 900,
+      recognizedText: "Bonjour",
+      analysis: {
+        words: [{ expected: "Bonjour", recognized: "Bonjour", status: "match" }],
+        mismatchCount: 0,
+        timingStatus: "similar",
+        needsRepeat: false
+      }
+    });
+
+    const updated = await repository.updateText({
+      textId: created.text.id,
+      title: "Evening dialogue",
+      body: "Bonsoir. A demain."
+    });
+
+    expect(updated.text.title).toBe("Evening dialogue");
+    expect(updated.sentences.map((sentence) => sentence.text)).toEqual([
+      "Bonsoir.",
+      "A demain."
+    ]);
+    expect((await repository.listTexts())[0].sentenceIds).toEqual(
+      updated.sentences.map((sentence) => sentence.id)
+    );
+    expect(await repository.listSentences(created.text.id)).toEqual(updated.sentences);
+    expect(await repository.listAttempts(created.sentences[0].id)).toEqual([]);
+    expect((await repository.listSessions())[0].attemptIds).toEqual([]);
+  });
+
+  it("deletes a text document and its sessions, sentences, and attempts", async () => {
+    const repository = new InMemoryRepository();
+    const created = await repository.createText({
+      title: "Cafe dialogue",
+      body: "Bonjour."
+    });
+    const session = await repository.createSession(created.text.id);
+    await repository.addAttempt({
+      sessionId: session.id,
+      sentenceId: created.sentences[0].id,
+      recordingPath: "mock://bonjour.wav",
+      durationMs: 900,
+      recognizedText: "Bonjour",
+      analysis: {
+        words: [{ expected: "Bonjour", recognized: "Bonjour", status: "match" }],
+        mismatchCount: 0,
+        timingStatus: "similar",
+        needsRepeat: false
+      }
+    });
+
+    await repository.deleteText(created.text.id);
+
+    expect(await repository.listTexts()).toEqual([]);
+    expect(await repository.listSessions()).toEqual([]);
+    expect(await repository.listSentences(created.text.id)).toEqual([]);
+    expect(await repository.listAttempts(created.sentences[0].id)).toEqual([]);
+  });
+
   it("lists attempts for a sentence", async () => {
     const repository = new InMemoryRepository();
     const created = await repository.createText({

@@ -1,24 +1,44 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface TextImportProps {
   onCreate(input: { title: string; body: string }): Promise<void> | void;
+  initialTitle?: string;
+  initialBody?: string;
+  submitLabel?: string;
+  formLabel?: string;
+  onCancel?(): void;
 }
 
 const contentPlaceholder =
   "Collez un article, un dialogue ou une leçon en français. Séparez les phrases avec un point, un point d'interrogation ou un point d'exclamation.";
 
-export function TextImport({ onCreate }: TextImportProps) {
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
+export function TextImport({
+  onCreate,
+  initialTitle = "",
+  initialBody = "",
+  submitLabel = "Start practice",
+  formLabel = "New passage",
+  onCancel,
+}: TextImportProps) {
+  const [title, setTitle] = useState(initialTitle);
+  const [body, setBody] = useState(initialBody);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState("");
   const sentenceCount = countSentences(body);
   const canSubmit = Boolean(body.trim()) && !isPending;
+  const pendingLabel =
+    submitLabel === "Save changes" ? "Saving changes" : "Starting practice";
+
+  useEffect(() => {
+    setTitle(initialTitle);
+    setBody(initialBody);
+    setError("");
+  }, [initialBody, initialTitle]);
 
   return (
     <form
       className="text-import"
-      aria-label="New passage"
+      aria-label={formLabel}
       onSubmit={async (event) => {
         event.preventDefault();
         if (!body.trim()) return;
@@ -26,10 +46,16 @@ export function TextImport({ onCreate }: TextImportProps) {
         setError("");
         try {
           await onCreate({ title: title.trim(), body: body.trim() });
-          setTitle("");
-          setBody("");
+          if (!initialTitle && !initialBody) {
+            setTitle("");
+            setBody("");
+          }
         } catch {
-          setError("Could not create passage.");
+          setError(
+            submitLabel === "Save changes"
+              ? "Could not save passage."
+              : "Could not create passage.",
+          );
         } finally {
           setIsPending(false);
         }
@@ -75,8 +101,18 @@ export function TextImport({ onCreate }: TextImportProps) {
           type="submit"
           disabled={!canSubmit}
         >
-          <span>{isPending ? "Starting practice" : "Start practice"}</span>
+          <span>{isPending ? pendingLabel : submitLabel}</span>
         </button>
+        {onCancel ? (
+          <button
+            className="button secondary text-import-cancel"
+            type="button"
+            disabled={isPending}
+            onClick={onCancel}
+          >
+            <span>Cancel</span>
+          </button>
+        ) : null}
       </div>
     </form>
   );

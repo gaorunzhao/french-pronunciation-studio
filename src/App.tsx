@@ -458,7 +458,7 @@ interface AppProps {
   ttsAdapter?: TtsAdapter;
 }
 
-type Screen = "import" | "practice";
+type Screen = "import" | "practice" | "edit";
 
 export default function App({
   repository: providedRepository,
@@ -498,6 +498,11 @@ export default function App({
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(
     () => (providedRepository ? undefined : defaultSeedState.session.id),
   );
+  const [editingTextId, setEditingTextId] = useState<string | undefined>();
+  const [editingDraft, setEditingDraft] = useState<{
+    title: string;
+    body: string;
+  }>();
   const [hasReference, setHasReference] = useState(false);
   const [isGeneratingReference, setIsGeneratingReference] = useState(false);
   const [referenceAudioUrl, setReferenceAudioUrl] = useState<string>();
@@ -794,8 +799,93 @@ function selectModel(modelId: string) {
     setActiveSessionId(session.id);
     selectedTextIdRef.current = created.text.id;
     selectedSentenceIdRef.current = created.sentences[0]?.id;
+    setEditingTextId(undefined);
+    setEditingDraft(undefined);
     clearSentenceLabState();
     setScreen("practice");
+  }
+
+  async function startEditingSession(sessionId: string) {
+    const session = sessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    const text = texts.find((item) => item.id === session.textId);
+    if (!text) return;
+
+    const textSentences = await repository.listSentences(text.id);
+    setEditingTextId(text.id);
+    setEditingDraft({
+      title: text.title,
+      body: textSentences.map((sentence) => sentence.text).join("\n"),
+    });
+    clearSentenceLabState();
+    setScreen("edit");
+  }
+
+  async function saveEditedPassage(input: { title: string; body: string }) {
+    if (!editingTextId) return;
+
+    const currentText = texts.find((text) => text.id === editingTextId);
+    const updated = await repository.updateText({
+      textId: editingTextId,
+      title: input.title.trim() || currentText?.title || "Untitled passage",
+      body: input.body.trim(),
+      source: currentText?.source,
+      notes: currentText?.notes,
+    });
+    const nextTexts = await repository.listTexts();
+    const nextSessions = sortSessionsNewestFirst(await repository.listSessions());
+    const nextSession =
+      nextSessions.find((session) => session.textId === editingTextId) ??
+      nextSessions[0];
+
+    setTexts(nextTexts);
+    setSessions(nextSessions);
+    setSentences(updated.sentences);
+    setSelectedTextId(updated.text.id);
+    setSelectedSentenceId(updated.sentences[0]?.id);
+    setActiveSessionId(nextSession?.id);
+    selectedTextIdRef.current = updated.text.id;
+    selectedSentenceIdRef.current = updated.sentences[0]?.id;
+    setEditingTextId(undefined);
+    setEditingDraft(undefined);
+    clearSentenceLabState();
+    setScreen("practice");
+  }
+
+  async function deleteSession(sessionId: string) {
+    const session = sessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    const text = texts.find((item) => item.id === session.textId);
+    const title = text?.title ?? "Untitled text";
+    if (!window.confirm(`Delete "${title}"? This cannot be undone.`)) return;
+
+    await repository.deleteText(session.textId);
+
+    const nextTexts = await repository.listTexts();
+    const nextSessions = sortSessionsNewestFirst(await repository.listSessions());
+    const currentSessionStillExists = nextSessions.some(
+      (item) => item.id === activeSessionId,
+    );
+    const nextSession =
+      currentSessionStillExists && activeSessionId !== sessionId
+        ? nextSessions.find((item) => item.id === activeSessionId)
+        : nextSessions[0];
+    const nextSentences = nextSession
+      ? await repository.listSentences(nextSession.textId)
+      : [];
+
+    setTexts(nextTexts);
+    setSessions(nextSessions);
+    setSentences(nextSentences);
+    setActiveSessionId(nextSession?.id);
+    setSelectedTextId(nextSession?.textId);
+    setSelectedSentenceId(nextSentences[0]?.id);
+    selectedTextIdRef.current = nextSession?.textId;
+    selectedSentenceIdRef.current = nextSentences[0]?.id;
+    setEditingTextId(undefined);
+    setEditingDraft(undefined);
+    clearSentenceLabState();
+    setScreen(nextSession ? "practice" : "import");
   }
 
   async function selectSession(sessionId: string) {
@@ -814,6 +904,8 @@ function selectModel(modelId: string) {
     setSelectedSentenceId(nextSentences[0]?.id);
     selectedTextIdRef.current = nextSession.textId;
     selectedSentenceIdRef.current = nextSentences[0]?.id;
+    setEditingTextId(undefined);
+    setEditingDraft(undefined);
     clearSentenceLabState();
     setScreen("practice");
   }
@@ -1151,7 +1243,11 @@ function selectModel(modelId: string) {
             type="button"
             aria-label="New passage"
             aria-current={screen === "import" ? "page" : undefined}
-            onClick={() => setScreen("import")}
+            onClick={() => {
+              setEditingTextId(undefined);
+              setEditingDraft(undefined);
+              setScreen("import");
+            }}
           >
             <span className="nav-label">New passage</span>
           </button>
@@ -1162,6 +1258,8 @@ function selectModel(modelId: string) {
           selectedSessionId={screen === "practice" ? activeSessionId : undefined}
           onSelectSession={selectSession}
           onReorderSessions={reorderSessions}
+          onEditSession={startEditingSession}
+          onDeleteSession={deleteSession}
         />
       </aside>
       {isSidebarCollapsed ? null : (
@@ -1190,6 +1288,19 @@ function selectModel(modelId: string) {
       <section className="workspace" aria-label="Practice workspace">
         {screen === "import" ? (
           <TextImport onCreate={createSessionFromImport} />
+        ) : screen === "edit" ? (
+          <TextImport
+            formLabel="Edit passage"
+            initialTitle={editingDraft?.title ?? ""}
+            initialBody={editingDraft?.body ?? ""}
+            submitLabel="Save changes"
+            onCreate={saveEditedPassage}
+            onCancel={() => {
+              setEditingTextId(undefined);
+              setEditingDraft(undefined);
+              setScreen(activeSessionId ? "practice" : "import");
+            }}
+          />
         ) : (
           <PracticeWorkspace
             text={selectedText}
